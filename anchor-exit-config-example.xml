@@ -1,0 +1,41 @@
+<!-- 
+Configuração para habilitar bloqueio automático quando dispositivo sai de âncora
+Adicione estas linhas no seu arquivo de configuração do Traccar (traccar.xml)
+-->
+<entry key="event.anchorExit.enabled">true</entry>
+<entry key="event.anchorExit.destroyGeofence">true</entry>
+
+<!-- 
+EXPLICAÇÃO:
+- event.anchorExit.enabled: Habilita bloqueio automático quando dispositivo sai de âncora
+- event.anchorExit.destroyGeofence: Destrói a geofence após bloqueio para evitar falsos positivos
+
+FUNCIONAMENTO:
+1. Sistema detecta saída de geofence com isAnchor=true e deviceId correspondente
+2. Envia comando engineStop automaticamente para bloquear dispositivo
+3. Se destroyGeofence=true, remove a geofence do sistema para evitar repetições
+4. Registra evento "anchorExitBlock" para auditoria completa
+
+ATRIBUTOS NECESSÁRIOS NA GEOFENCE:
+- isAnchor: true (identifica como âncora)
+- deviceId: ID do dispositivo (para associar âncora ao dispositivo específico)
+
+EXEMPLO DE USO:
+1. Criar geofence com atributos: {"isAnchor": true, "deviceId": 123}
+2. Habilitar configurações: event.anchorExit.enabled = true, event.anchorExit.destroyGeofence = true
+3. Quando dispositivo 123 sair da geofence, será automaticamente bloqueado
+4. Geofence será destruída automaticamente para evitar falsos positivos
+5. Evento "anchorExitBlock" será registrado no sistema
+
+VANTAGENS DA DESTRUIÇÃO AUTOMÁTICA:
+- Evita bloqueios repetidos se dispositivo voltar à área
+- Previne falsos positivos em casos de movimento oscilatório
+- Mantém sistema limpo após uso da âncora
+- Facilita recriação de âncora quando necessário
+
+SEGURANÇA:
+- Use apenas em casos de segurança/roubo
+- Configure adequadamente os atributos da geofence
+- Monitore os eventos gerados pelo sistema
+- Considere desabilitar destroyGeofence se precisar manter âncora ativa
+-->

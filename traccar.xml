@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties>
+    <!-- Configurações básicas do Traccar -->
+    
+    <!-- Porta HTTP -->
+    <entry key="web.port">8082</entry>
+    
+    <!-- Configurações de banco de dados (H2 em memória para teste) -->
+    <entry key="database.driver">org.h2.Driver</entry>
+    <entry key="database.url">jdbc:h2:mem:traccar</entry>
+    <entry key="database.user">sa</entry>
+    <entry key="database.password"></entry>
+    
+    <!-- Configurações de protocolo -->
+    <entry key="osmand.port">5055</entry>
+    <entry key="gt06.port">5027</entry>
+    <entry key="h02.port">5001</entry>
+    <entry key="galileo.port">5002</entry>
+    <entry key="pt502.port">5003</entry>
+    <entry key="tr20.port">5004</entry>
+    
+    <!-- Configurações do sistema de âncora -->
+    <entry key="event.anchorExit.enabled">true</entry>
+    <entry key="event.anchorExit.destroyGeofence">true</entry>
+    
+    <!-- Logs -->
+    <entry key="logger.enable">true</entry>
+    <entry key="logger.level">INFO</entry>
+    <entry key="logger.file">logs/traccar.log</entry>
+</properties>

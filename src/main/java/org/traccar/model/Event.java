@@ -58,6 +58,8 @@ public class Event extends Message {
     public static final String TYPE_GEOFENCE_ENTER = "geofenceEnter";
     public static final String TYPE_GEOFENCE_EXIT = "geofenceExit";
 
+    public static final String TYPE_ANCHOR_EXIT_BLOCK = "anchorExitBlock";
+
     public static final String TYPE_ALARM = "alarm";
 
     public static final String TYPE_IGNITION_ON = "ignitionOn";

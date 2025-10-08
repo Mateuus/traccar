@@ -43,6 +43,7 @@ import org.traccar.handler.PostProcessHandler;
 import org.traccar.handler.SpeedLimitHandler;
 import org.traccar.handler.TimeHandler;
 import org.traccar.handler.events.AlarmEventHandler;
+import org.traccar.handler.events.AnchorExitEventHandler;
 import org.traccar.handler.events.BaseEventHandler;
 import org.traccar.handler.events.BehaviorEventHandler;
 import org.traccar.handler.events.CommandResultEventHandler;
@@ -124,6 +125,7 @@ public class ProcessingHandler extends ChannelInboundHandlerAdapter implements B
                 FuelEventHandler.class,
                 MotionEventHandler.class,
                 GeofenceEventHandler.class,
+                AnchorExitEventHandler.class,
                 AlarmEventHandler.class,
                 IgnitionEventHandler.class,
                 MaintenanceEventHandler.class,

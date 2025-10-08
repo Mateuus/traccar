@@ -1028,6 +1028,22 @@ public final class Keys {
             List.of(KeyType.CONFIG));
 
     /**
+     * Enable automatic device blocking when exiting anchor geofences.
+     */
+    public static final ConfigKey<Boolean> EVENT_ANCHOR_EXIT_ENABLED = new BooleanConfigKey(
+            "event.anchorExit.enabled",
+            List.of(KeyType.CONFIG),
+            false);
+
+    /**
+     * Automatically destroy anchor geofence after blocking device to prevent false positives.
+     */
+    public static final ConfigKey<Boolean> EVENT_ANCHOR_EXIT_DESTROY_GEOFENCE = new BooleanConfigKey(
+            "event.anchorExit.destroyGeofence",
+            List.of(KeyType.CONFIG),
+            true);
+
+    /**
      * Restrict global SMTP configuration to system messages only (e.g. password reset).
      */
     public static final ConfigKey<Boolean> MAIL_SMTP_SYSTEM_ONLY = new BooleanConfigKey(
