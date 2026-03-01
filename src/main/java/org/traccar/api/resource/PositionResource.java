@@ -42,6 +42,7 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.StreamingOutput;
+import javax.xml.stream.XMLStreamException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -137,7 +138,7 @@ public class PositionResource extends BaseResource {
         StreamingOutput stream = output -> {
             try {
                 kmlExportProvider.generate(output, deviceId, from, to);
-            } catch (StorageException e) {
+            } catch (XMLStreamException | StorageException e) {
                 throw new WebApplicationException(e);
             }
         };
@@ -154,7 +155,7 @@ public class PositionResource extends BaseResource {
         permissionsService.checkPermission(Device.class, getUserId(), deviceId);
         StreamingOutput stream = output -> {
             try {
-                csvExportProvider.generate(output, deviceId, geofenceId, from, to);
+                csvExportProvider.generate(output, getUserId(), deviceId, geofenceId, from, to);
             } catch (StorageException e) {
                 throw new WebApplicationException(e);
             }
@@ -173,7 +174,7 @@ public class PositionResource extends BaseResource {
         StreamingOutput stream = output -> {
             try {
                 gpxExportProvider.generate(output, deviceId, from, to);
-            } catch (StorageException e) {
+            } catch (XMLStreamException | StorageException e) {
                 throw new WebApplicationException(e);
             }
         };

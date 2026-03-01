@@ -213,7 +213,7 @@ public class ProcessingHandler extends ChannelInboundHandlerAdapter implements B
             nextPosition = queue.peek();
         }
         if (nextPosition != null) {
-            processPositionHandlers(ctx, nextPosition);
+            ctx.executor().execute(() -> processPositionHandlers(ctx, nextPosition));
         }
     }
 
