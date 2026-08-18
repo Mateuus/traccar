@@ -114,20 +114,28 @@ public class AnchorExitEventHandler extends BaseEventHandler {
      */
     private void handleAnchorExit(Position position, Geofence geofence, Callback callback) {
         try {
-            // Enviar comando engineStop
-            sendStopCommand(position.getDeviceId());
+            // O comando é uma tentativa isolada: falha sempre que o dispositivo está offline,
+            // que é justamente o cenário de furto. A auditoria não pode depender dele.
+            boolean blocked = sendStopCommand(position.getDeviceId());
 
             // Criar evento para auditoria
             Event event = new Event(Event.TYPE_ANCHOR_EXIT_BLOCK, position);
             event.setGeofenceId(geofence.getId());
             event.set("geofenceName", geofence.getName());
+            event.set("blocked", blocked);
             callback.eventDetected(event);
 
-            LOGGER.info("Dispositivo {} bloqueado por sair da âncora: {}",
-                    position.getDeviceId(), geofence.getName());
+            if (blocked) {
+                LOGGER.info("Dispositivo {} bloqueado por sair da âncora: {}",
+                        position.getDeviceId(), geofence.getName());
+            } else {
+                LOGGER.warn("Dispositivo {} saiu da âncora {}, mas o bloqueio NÃO foi enviado",
+                        position.getDeviceId(), geofence.getName());
+            }
 
-            // Destruir geofence se configurado
-            if (destroyGeofence) {
+            // Só consome a âncora quando o bloqueio saiu de fato; se falhou, ela permanece
+            // armada para uma nova tentativa e visível para o operador.
+            if (destroyGeofence && blocked) {
                 destroyAnchorGeofence(geofence);
             }
 
@@ -137,14 +145,20 @@ public class AnchorExitEventHandler extends BaseEventHandler {
     }
 
     /**
-     * Envia comando engineStop para o dispositivo.
+     * Envia comando engineStop para o dispositivo. Retorna false se o envio falhar.
      */
-    private void sendStopCommand(long deviceId) throws Exception {
+    private boolean sendStopCommand(long deviceId) {
         Command command = new Command();
         command.setDeviceId(deviceId);
         command.setType(Command.TYPE_ENGINE_STOP);
         command.set(Command.KEY_NO_QUEUE, true);
-        commandsManager.sendCommand(command);
+        try {
+            commandsManager.sendCommand(command);
+            return true;
+        } catch (Exception e) {
+            LOGGER.error("Falha ao enviar bloqueio para o dispositivo {}: {}", deviceId, e.getMessage());
+            return false;
+        }
     }
 
     /**
