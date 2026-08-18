@@ -199,7 +199,7 @@ public class Minifinder2ProtocolDecoder extends BaseProtocolDecoder {
                         if (BitUtil.check(alarm, 31)) {
                             position.set("bark", true);
                         }
-                        if (length == 5) {
+                        if (length >= 9) {
                             position.setDeviceTime(new Date(buf.readUnsignedIntLE() * 1000));
                         }
                         position.set(Position.KEY_EVENT, alarm);
@@ -222,8 +222,9 @@ public class Minifinder2ProtocolDecoder extends BaseProtocolDecoder {
                         break;
                     case 0x21:
                     case 0x29:
+                    case 0x2B:
                         int mcc = buf.readUnsignedShortLE();
-                        int mnc = buf.readUnsignedByte();
+                        int mnc = key == 0x2B ? buf.readUnsignedShortLE() : buf.readUnsignedByte();
                         if (position.getNetwork() == null) {
                             position.setNetwork(new Network());
                         }
@@ -231,7 +232,7 @@ public class Minifinder2ProtocolDecoder extends BaseProtocolDecoder {
                             int rssi = buf.readByte();
                             int lac = buf.readUnsignedShortLE();
                             long cid;
-                            if (key == 0x29) {
+                            if (key == 0x29 || key == 0x2B) {
                                 cid = buf.readIntLE();
                             } else {
                                 cid = buf.readUnsignedShortLE();
@@ -331,13 +332,15 @@ public class Minifinder2ProtocolDecoder extends BaseProtocolDecoder {
                         }
                         break;
                     case 0x2A:
-                        buf.readUnsignedByte(); // flags
+                        int wifiFlags = buf.readUnsignedByte();
                         buf.skipBytes(6); // mac
                         buf.readUnsignedByte(); // rssi
-                        position.setLatitude(buf.readIntLE() / 10000000.0);
-                        position.setLongitude(buf.readIntLE() / 10000000.0);
-                        position.setValid(true);
-                        if (endIndex > buf.readerIndex()) {
+                        if (BitUtil.check(wifiFlags, 7)) {
+                            position.setLatitude(buf.readIntLE() / 10000000.0);
+                            position.setLongitude(buf.readIntLE() / 10000000.0);
+                            position.setValid(true);
+                        }
+                        if (BitUtil.check(wifiFlags, 6) && endIndex > buf.readerIndex()) {
                             position.set("description", buf.readCharSequence(
                                     endIndex - buf.readerIndex(), StandardCharsets.US_ASCII).toString());
                         }
@@ -400,6 +403,10 @@ public class Minifinder2ProtocolDecoder extends BaseProtocolDecoder {
         } else if (type == MSG_CONFIGURATION) {
 
             return decodeConfiguration(channel, remoteAddress, buf);
+
+        } else if (type == MSG_SYSTEM_CONTROL) {
+
+            return decodeSystemControl(channel, remoteAddress, buf);
 
         } else if (type == MSG_RESPONSE) {
 
@@ -524,6 +531,35 @@ public class Minifinder2ProtocolDecoder extends BaseProtocolDecoder {
                 }
                 case 0x66 -> position.set("imsi", BufferUtil.readString(buf, length));
                 case 0x75 -> position.set("extraEnableControl", buf.readUnsignedInt());
+            }
+
+            buf.readerIndex(endIndex);
+        }
+
+        return position;
+    }
+
+    private Position decodeSystemControl(Channel channel, SocketAddress remoteAddress, ByteBuf buf) {
+
+        DeviceSession deviceSession = getDeviceSession(channel, remoteAddress);
+        if (deviceSession == null) {
+            return null;
+        }
+
+        Position position = new Position(getProtocolName());
+        position.setDeviceId(deviceSession.getDeviceId());
+
+        getLastLocation(position, null);
+
+        while (buf.isReadable()) {
+            int length = buf.readUnsignedByte();
+            int endIndex = buf.readerIndex() + length;
+            int key = buf.readUnsignedByte();
+
+            if (key == 0x1F) {
+                buf.readUnsignedByte(); // type
+                position.set(Position.KEY_RESULT, buf.readCharSequence(
+                        endIndex - buf.readerIndex(), StandardCharsets.UTF_8).toString());
             }
 
             buf.readerIndex(endIndex);
