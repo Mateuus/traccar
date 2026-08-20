@@ -21,7 +21,6 @@ import org.slf4j.LoggerFactory;
 import org.traccar.config.Config;
 import org.traccar.config.Keys;
 import org.traccar.database.CommandsManager;
-import org.traccar.helper.model.PositionUtil;
 import org.traccar.model.Command;
 import org.traccar.model.Event;
 import org.traccar.model.Geofence;
@@ -39,11 +38,10 @@ import java.util.List;
  * Handler para bloquear dispositivos automaticamente quando saem de âncoras.
  * Identifica âncoras através dos atributos: isAnchor=true e deviceId.
  */
-public class AnchorExitEventHandler extends BaseEventHandler {
+public class AnchorExitEventHandler extends BasePositionEventHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AnchorExitEventHandler.class);
 
-    private final CacheManager cacheManager;
     private final CommandsManager commandsManager;
     private final Storage storage;
     private final boolean enabled;
@@ -55,7 +53,7 @@ public class AnchorExitEventHandler extends BaseEventHandler {
             CacheManager cacheManager,
             CommandsManager commandsManager,
             Storage storage) {
-        this.cacheManager = cacheManager;
+        super(cacheManager);
         this.commandsManager = commandsManager;
         this.storage = storage;
         this.enabled = config.getBoolean(Keys.EVENT_ANCHOR_EXIT_ENABLED);
@@ -63,14 +61,13 @@ public class AnchorExitEventHandler extends BaseEventHandler {
     }
 
     @Override
-    public void onPosition(Position position, Callback callback) {
-        if (!enabled || !PositionUtil.isLatest(cacheManager, position)) {
+    protected void onPosition(Position position, Position lastPosition, Callback callback) {
+        if (!enabled) {
             return;
         }
 
         // Obter geofences da posição anterior
         List<Long> oldGeofences = new ArrayList<>();
-        Position lastPosition = cacheManager.getPosition(position.getDeviceId());
         if (lastPosition != null && lastPosition.getGeofenceIds() != null) {
             oldGeofences.addAll(lastPosition.getGeofenceIds());
         }
