@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.4.xsd"
+  logicalFilePath="changelog-rdm-bigint-positions">
+
+  <!--
+    RDM: alarga tc_positions.id (e a coluna que o referencia) para BIGINT.
+
+    O upstream deixou essa coluna de fora de proposito: o commit ff09f38e1
+    ("Widen non-autoincrement id columns", v6.15.0) alargou apenas as colunas
+    de referencia, nunca as chaves primarias autoincrement. Com ~1000 devices
+    o teto do INT (2.147.483.647) e alcancado em cerca de 2 anos.
+
+    NAO usar <modifyDataType> aqui: no MySQL ele gera "ALTER TABLE ... MODIFY
+    id BIGINT", que descarta o AUTO_INCREMENT em silencio e faz o INSERT
+    seguinte falhar com "Field 'id' doesn't have a default value" (verificado
+    em MySQL 8.0.46). Por isso a coluna e redeclarada por inteiro em SQL.
+
+    Restrito a mysql/mariadb, que e o que a RDM roda. Nos demais SGBDs o
+    schema segue igual ao do upstream.
+  -->
+
+  <changeSet author="rdm" id="rdm-bigint-tc-positions-id" runInTransaction="false">
+
+    <preConditions onFail="MARK_RAN">
+      <dbms type="mysql,mariadb" />
+      <sqlCheck expectedResult="1">
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tc_positions'
+          AND COLUMN_NAME = 'id' AND DATA_TYPE = 'int';
+      </sqlCheck>
+    </preConditions>
+
+    <sql>
+      ALTER TABLE tc_positions MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT;
+    </sql>
+
+    <rollback>
+      ALTER TABLE tc_positions MODIFY COLUMN id INT NOT NULL AUTO_INCREMENT;
+    </rollback>
+
+  </changeSet>
+
+  <!-- tc_events.positionid referencia tc_positions.id e ficou INT: o upstream
+       alargou tc_devices.positionid/motionpositionid mas esqueceu esta. Sem
+       ela, todo evento que aponte para uma posicao acima de 2,1 bi quebra. -->
+  <changeSet author="rdm" id="rdm-bigint-tc-events-positionid" runInTransaction="false">
+
+    <preConditions onFail="MARK_RAN">
+      <dbms type="mysql,mariadb" />
+      <sqlCheck expectedResult="1">
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tc_events'
+          AND COLUMN_NAME = 'positionid' AND DATA_TYPE = 'int';
+      </sqlCheck>
+    </preConditions>
+
+    <sql>
+      ALTER TABLE tc_events MODIFY COLUMN positionid BIGINT;
+    </sql>
+
+    <rollback>
+      ALTER TABLE tc_events MODIFY COLUMN positionid INT;
+    </rollback>
+
+  </changeSet>
+
+</databaseChangeLog>
