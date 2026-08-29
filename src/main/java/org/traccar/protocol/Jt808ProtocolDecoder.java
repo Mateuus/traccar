@@ -701,6 +701,9 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
             int subtype = buf.readUnsignedByte();
             int length = buf.readUnsignedByte();
             int endIndex = buf.readerIndex() + length;
+            if (endIndex > buf.writerIndex()) {
+                break;
+            }
             String stringValue;
             int event;
             long alarm;
@@ -906,8 +909,12 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
                         int mcc = buf.readUnsignedShort();
                         int mnc = buf.readUnsignedShort();
                         while (buf.readerIndex() < endIndex) {
-                            network.addCellTower(CellTower.from(
-                                mcc, mnc, buf.readUnsignedMedium(), buf.readUnsignedInt(), buf.readUnsignedByte()));
+                            int lac = buf.readUnsignedMedium();
+                            long cid = buf.readUnsignedInt();
+                            int rssi = buf.readUnsignedByte();
+                            if (lac > 0 && lac <= 0xffff && cid <= 0xfffffff) {
+                                network.addCellTower(CellTower.from(mcc, mnc, lac, cid, rssi));
+                            }
                         }
                     } else if (subtype == 0xE1 && length == 2) {
                         position.set(Position.KEY_POWER, buf.readUnsignedShort() / 10.0);
@@ -1688,6 +1695,9 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
                             case 0x02:
                                 position.addAlarm(Position.ALARM_POWER_CUT);
                                 break;
+                            case 0x0E:
+                                position.addAlarm(Position.ALARM_IDLE);
+                                break;
                             case 0x1A:
                                 position.addAlarm(Position.ALARM_ACCELERATION);
                                 break;
@@ -1704,6 +1714,9 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
                                 break;
                             case 0x23:
                                 position.addAlarm(Position.ALARM_FATIGUE_DRIVING);
+                                break;
+                            case 0x25:
+                                position.addAlarm(Position.ALARM_OVERSPEED);
                                 break;
                             case 0x26:
                             case 0x27:
