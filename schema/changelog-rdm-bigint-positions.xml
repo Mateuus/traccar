@@ -68,4 +68,54 @@
 
   </changeSet>
 
+  <!--
+    tc_events.id e tc_actions.id: mesma classe de problema, prazo MUITO maior
+    (dezenas de anos, nao ~2 como tc_positions). Alargadas aqui so porque em
+    banco novo custa zero; adiar significa pagar depois um ALTER com lock numa
+    tabela grande. As demais PKs (tc_users, tc_devices, tc_geofences, ...) sao
+    limitadas pelo tamanho do negocio e ficam como estao.
+  -->
+
+  <changeSet author="rdm" id="rdm-bigint-tc-events-id" runInTransaction="false">
+
+    <preConditions onFail="MARK_RAN">
+      <dbms type="mysql,mariadb" />
+      <sqlCheck expectedResult="1">
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tc_events'
+          AND COLUMN_NAME = 'id' AND DATA_TYPE = 'int';
+      </sqlCheck>
+    </preConditions>
+
+    <sql>
+      ALTER TABLE tc_events MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT;
+    </sql>
+
+    <rollback>
+      ALTER TABLE tc_events MODIFY COLUMN id INT NOT NULL AUTO_INCREMENT;
+    </rollback>
+
+  </changeSet>
+
+  <changeSet author="rdm" id="rdm-bigint-tc-actions-id" runInTransaction="false">
+
+    <preConditions onFail="MARK_RAN">
+      <dbms type="mysql,mariadb" />
+      <sqlCheck expectedResult="1">
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tc_actions'
+          AND COLUMN_NAME = 'id' AND DATA_TYPE = 'int';
+      </sqlCheck>
+    </preConditions>
+
+    <sql>
+      ALTER TABLE tc_actions MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT;
+    </sql>
+
+    <rollback>
+      ALTER TABLE tc_actions MODIFY COLUMN id INT NOT NULL AUTO_INCREMENT;
+    </rollback>
+
+  </changeSet>
+
 </databaseChangeLog>
