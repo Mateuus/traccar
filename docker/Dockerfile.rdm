@@ -1,0 +1,60 @@
+# Imagem do Traccar da RDM (fork Mateuus/traccar).
+#
+# Reproduz o que o CI oficial faz (gradle assemble + build do traccar-web +
+# JRE mínimo por jlink) e entrega o MESMO layout /opt/traccar da imagem
+# oficial — então é substituta direta dela em qualquer compose.
+#
+#   docker build -f docker/Dockerfile.rdm -t rdm-traccar:6.15.3-rdm1 .
+#
+# O nome da imagem descreve o ARTEFATO, não a instância: a mesma imagem roda
+# na plataforma RDM, na Locar e em servidores futuros. Quem ganha número é o
+# container (traccar-rdm, traccar-locar), nunca a imagem.
+
+# ── 1. Servidor (fork) ───────────────────────────────────────────────────────
+FROM eclipse-temurin:21-jdk AS server
+WORKDIR /src
+# Copia primeiro só o necessário para resolver dependências: assim uma mudança
+# em código-fonte não invalida o cache do download do gradle.
+COPY gradle/ gradle/
+COPY gradlew build.gradle settings.gradle ./
+RUN ./gradlew --no-daemon dependencies --quiet || true
+COPY . .
+RUN ./gradlew --no-daemon assemble
+
+# ── 2. Interface nativa do Traccar (submódulo traccar-web) ───────────────────
+# Serve de painel administrativo de apoio; a interface do cliente é o
+# traccar-nextjs, servido em app.rdmrastreamento.com.br.
+FROM node:22-alpine AS web
+WORKDIR /web
+COPY traccar-web/package.json traccar-web/package-lock.json ./
+# `npm install` e nao `npm ci`: no commit que o upstream fixou no submodulo, o
+# package-lock.json esta fora de sincronia com o package.json (ajv, @types/node
+# e yaml divergem) e o `ci` recusa por design. Trocar o commit resolveria o
+# lock, mas traria uma interface de versao diferente da do servidor.
+RUN npm install --no-audit --no-fund
+COPY traccar-web/ ./
+RUN npm run build
+
+# ── 3. JRE mínimo (mesmos módulos da imagem oficial) ─────────────────────────
+FROM eclipse-temurin:21-alpine AS jre
+RUN jlink --add-modules java.se,jdk.charsets,jdk.crypto.ec,jdk.unsupported \
+    --strip-debug --no-header-files --no-man-pages --output /jre
+
+# ── 4. Imagem final ──────────────────────────────────────────────────────────
+FROM alpine
+RUN mkdir -p /opt/traccar/data /opt/traccar/logs /opt/traccar/media
+COPY --from=server /src/target/tracker-server.jar /opt/traccar/
+COPY --from=server /src/target/lib/               /opt/traccar/lib/
+# schema/ é obrigatório e fica FORA do jar por design do Traccar: sem ele o
+# Liquibase não migra o banco. Precisa casar com a versão do jar.
+COPY --from=server /src/schema/                   /opt/traccar/schema/
+COPY --from=server /src/templates/                /opt/traccar/templates/
+COPY --from=server /src/setup/traccar.xml         /opt/traccar/conf/
+COPY --from=web    /web/build/                    /opt/traccar/web/
+COPY --from=web    /web/src/resources/l10n/       /opt/traccar/templates/translations/
+COPY --from=jre    /jre                           /opt/traccar/jre
+WORKDIR /opt/traccar
+# ExitOnOutOfMemoryError é de propósito: em OOM o processo morre e o
+# restart: unless-stopped ressuscita, em vez de ficar degradado.
+ENTRYPOINT ["/opt/traccar/jre/bin/java", "-XX:+ExitOnOutOfMemoryError"]
+CMD ["-Xms2g", "-Xmx2g", "-jar", "tracker-server.jar", "conf/traccar.xml"]
