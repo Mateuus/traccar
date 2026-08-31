@@ -12,3 +12,9 @@ out
 build
 .vscode
 bin
+
+# Config de teste local: leva o par VAPID e a senha do banco da maquina de quem
+# desenvolve. NUNCA versionar — a chave privada permite enviar push em nome do servidor.
+local-test.xml
+# O Traccar rotaciona o log mas nunca apaga os antigos.
+logs/
