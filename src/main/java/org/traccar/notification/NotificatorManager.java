@@ -30,6 +30,7 @@ import org.traccar.notificators.NotificatorTelegram;
 import org.traccar.notificators.NotificatorTraccar;
 import org.traccar.notificators.NotificatorWhatsapp;
 import org.traccar.notificators.NotificatorWeb;
+import org.traccar.notificators.NotificatorWebPush;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -42,6 +43,8 @@ import java.util.stream.Collectors;
 @Singleton
 public class NotificatorManager {
 
+    // RDM: Map.of() so tem sobrecarga ate 10 pares e "webpush" ocupa o decimo. Um notificator a
+    // mais exige trocar por Map.ofEntries(), senao o erro de compilacao nao diz o que houve.
     private static final Map<String, Class<? extends Notificator>> NOTIFICATORS_ALL = Map.of(
             "command", NotificatorCommand.class,
             "web", NotificatorWeb.class,
@@ -51,7 +54,8 @@ public class NotificatorManager {
             "traccar", NotificatorTraccar.class,
             "telegram", NotificatorTelegram.class,
             "whatsapp", NotificatorWhatsapp.class,
-            "pushover", NotificatorPushover.class);
+            "pushover", NotificatorPushover.class,
+            "webpush", NotificatorWebPush.class);
 
     private final Injector injector;
 
