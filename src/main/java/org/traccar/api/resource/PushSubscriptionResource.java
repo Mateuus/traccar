@@ -32,6 +32,7 @@ import org.traccar.notificators.NotificatorWebPush;
 import org.traccar.storage.StorageException;
 import org.traccar.storage.query.Columns;
 import org.traccar.storage.query.Condition;
+import org.traccar.storage.query.Order;
 import org.traccar.storage.query.Request;
 
 import java.util.Date;
@@ -80,6 +81,72 @@ public class PushSubscriptionResource extends BaseResource {
         public Map<String, String> getKeys() {
             return keys;
         }
+    }
+
+    /**
+     * O que a tela "Aparelhos que recebem alertas" precisa saber de cada inscricao.
+     *
+     * DTO proprio, e nao a entidade: {@code publicKey} e {@code authSecret} sao material de
+     * cifragem e nao tem razao nenhuma para sair do servidor. Devolver o {@link PushSubscription}
+     * e confiar numa anotacao de exclusao funcionaria hoje, mas o dia em que alguem acrescentar um
+     * campo sensivel na entidade ele vaza sozinho, sem ninguem notar. Aqui o vazamento exigiria
+     * escrever o getter de proposito.
+     */
+    public static class SubscriptionInfo {
+
+        private final long id;
+        private final String endpoint;
+        private final String userAgent;
+        private final Date createdAt;
+
+        SubscriptionInfo(PushSubscription subscription) {
+            id = subscription.getId();
+            endpoint = subscription.getEndpoint();
+            userAgent = subscription.getUserAgent();
+            createdAt = subscription.getCreatedAt();
+        }
+
+        public long getId() {
+            return id;
+        }
+
+        /**
+         * O endpoint sai porque e a identidade da inscricao: e por ele que o painel reconhece qual
+         * linha e o aparelho de quem esta olhando, e e ele que volta no {@code unsubscribe}.
+         */
+        public String getEndpoint() {
+            return endpoint;
+        }
+
+        public String getUserAgent() {
+            return userAgent;
+        }
+
+        public Date getCreatedAt() {
+            return createdAt;
+        }
+    }
+
+    /**
+     * As inscricoes do usuario autenticado, das mais novas para as mais velhas.
+     *
+     * Sem nenhuma nocao de administrador de proposito: isto responde "quais aparelhos MEUS recebem
+     * alerta", e nao existe caso de uso para um usuario ver o parque de aparelhos de outro. Quem
+     * precisar auditar tem o banco.
+     */
+    @Path("subscriptions")
+    @GET
+    public List<SubscriptionInfo> subscriptions() throws StorageException {
+        /*
+         * Include e nao All: assim as chaves de cifragem nem chegam a sair do banco. O JSON sairia
+         * igual filtrando depois em Java, mas nao ha por que carregar segredo na memoria da JVM
+         * para em seguida jogar fora.
+         */
+        List<PushSubscription> subscriptions = storage.getObjects(PushSubscription.class, new Request(
+                new Columns.Include("id", "endpoint", "userAgent", "createdAt"),
+                new Condition.Equals("userId", getUserId()),
+                new Order("createdAt", true, 0)));
+        return subscriptions.stream().map(SubscriptionInfo::new).toList();
     }
 
     @Path("publicKey")
