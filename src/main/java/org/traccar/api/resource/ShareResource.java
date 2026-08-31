@@ -36,6 +36,7 @@ import org.traccar.storage.query.Request;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -53,7 +54,9 @@ public class ShareResource extends BaseResource {
     @Inject
     private TokenManager tokenManager;
 
-    private String share(User user, Class<? extends BaseModel> clazz, long id, Date expiration)
+    private String share(
+            User user, Class<? extends BaseModel> clazz, long id, Date expiration,
+            boolean allowCommands, boolean allowReports)
             throws StorageException, GeneralSecurityException, IOException {
 
         if (permissionsService.getServer().getBoolean(Keys.DEVICE_SHARE_DISABLE.getKey())) {
@@ -82,6 +85,22 @@ public class ShareResource extends BaseResource {
         User share = storage.getObject(User.class, new Request(
                 new Columns.All(), new Condition.Equals("email", shareEmail)));
 
+        /*
+         * RDM: quem compartilha ESCOLHE se o link pode mandar comando (bloquear/desbloquear).
+         *
+         * Os dois portoes de cima continuam valendo e sao teto, nao sugestao: quem nao pode mandar
+         * comando nao consegue conceder isso a ninguem, e o administrador pode desligar comando em
+         * link compartilhado para a instalacao inteira (web.shareDevice.commands). A escolha da tela
+         * so restringe. `allowCommands` chega true quando o cliente nao manda nada, e ai a conta e
+         * exatamente a do upstream.
+         */
+        boolean limitCommands = user.getLimitCommands()
+                || !config.getBoolean(Keys.WEB_SHARE_DEVICE_COMMANDS)
+                || !allowCommands;
+        boolean disableReports = user.getDisableReports()
+                || !config.getBoolean(Keys.WEB_SHARE_DEVICE_REPORTS)
+                || !allowReports;
+
         if (share == null) {
             share = new User();
             share.setName(clazz == Device.class ? ((Device) object).getName() : ((Group) object).getName());
@@ -89,12 +108,32 @@ public class ShareResource extends BaseResource {
             share.setExpirationTime(expiration);
             share.setTemporary(true);
             share.setReadonly(true);
-            share.setLimitCommands(user.getLimitCommands() || !config.getBoolean(Keys.WEB_SHARE_DEVICE_COMMANDS));
-            share.setDisableReports(user.getDisableReports() || !config.getBoolean(Keys.WEB_SHARE_DEVICE_REPORTS));
+            share.setLimitCommands(limitCommands);
+            share.setDisableReports(disableReports);
 
             share.setId(storage.addObject(share, new Request(new Columns.Exclude("id"))));
 
             storage.addPermission(new Permission(User.class, share.getId(), clazz, id));
+        } else {
+            /*
+             * RDM: o upstream reaproveita o usuario existente SEM tocar nele.
+             *
+             * O e-mail do compartilhamento e derivado de (dono, veiculo), entao o segundo
+             * compartilhamento do mesmo veiculo cai sempre aqui — e, no upstream, com as permissoes
+             * congeladas no primeiro. Na pratica: desmarcar "permitir comandos" e compartilhar de
+             * novo NAO tirava o comando, e estender o prazo nao adiantava porque o proprio usuario
+             * continuava expirando na data antiga. As duas coisas em silencio.
+             *
+             * A validade passa a ser a do compartilhamento mais recente. Isso encurta um link
+             * distribuido antes com prazo maior, e e o comportamento desejado: quem compartilhou
+             * mudou de ideia.
+             */
+            share.setExpirationTime(expiration);
+            share.setLimitCommands(limitCommands);
+            share.setDisableReports(disableReports);
+            storage.updateObject(share, new Request(
+                    new Columns.Include("expirationTime", "limitCommands", "disableReports"),
+                    new Condition.Equals("id", share.getId())));
         }
 
         return tokenManager.generateToken(share.getId(), expiration);
@@ -105,8 +144,14 @@ public class ShareResource extends BaseResource {
     @POST
     public String shareDevice(
             @FormParam("deviceId") long deviceId,
-            @FormParam("expiration") Date expiration) throws StorageException, GeneralSecurityException, IOException {
-        return share(permissionsService.getUser(getUserId()), Device.class, deviceId, expiration);
+            @FormParam("expiration") Date expiration,
+            // RDM: `true` por omissao para o corpo do upstream continuar valendo igual.
+            @FormParam("allowCommands") @DefaultValue("true") boolean allowCommands,
+            @FormParam("allowReports") @DefaultValue("true") boolean allowReports)
+            throws StorageException, GeneralSecurityException, IOException {
+        return share(
+                permissionsService.getUser(getUserId()), Device.class, deviceId, expiration,
+                allowCommands, allowReports);
     }
 
     @Path("group")
@@ -114,8 +159,13 @@ public class ShareResource extends BaseResource {
     @POST
     public String shareGroup(
             @FormParam("groupId") long groupId,
-            @FormParam("expiration") Date expiration) throws StorageException, GeneralSecurityException, IOException {
-        return share(permissionsService.getUser(getUserId()), Group.class, groupId, expiration);
+            @FormParam("expiration") Date expiration,
+            @FormParam("allowCommands") @DefaultValue("true") boolean allowCommands,
+            @FormParam("allowReports") @DefaultValue("true") boolean allowReports)
+            throws StorageException, GeneralSecurityException, IOException {
+        return share(
+                permissionsService.getUser(getUserId()), Group.class, groupId, expiration,
+                allowCommands, allowReports);
     }
 
 }
