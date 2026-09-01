@@ -20,6 +20,7 @@ import com.google.inject.Provider;
 import org.traccar.api.security.PermissionsService;
 import org.traccar.database.StatisticsManager;
 import org.traccar.helper.SessionHelper;
+import org.traccar.helper.model.UserAvatar;
 import org.traccar.model.Device;
 import org.traccar.storage.Storage;
 import org.traccar.storage.StorageException;
@@ -77,12 +78,31 @@ public class MediaFilter implements Filter {
             String path = ((HttpServletRequest) request).getPathInfo();
             String[] parts = path != null ? path.split("/") : null;
             if (parts != null && parts.length >= 2) {
-                Device device = storage.getObject(Device.class, new Request(
-                        new Columns.All(), new Condition.Equals("uniqueId", parts[1])));
-                if (device != null) {
-                    permissionsServiceProvider.get().checkPermission(Device.class, userId, device.getId());
-                    chain.doFilter(request, response);
-                    return;
+                /*
+                 * Acréscimo da RDM: a pasta de avatares (ver UserAvatar). O primeiro pedaço do
+                 * caminho aqui é sempre o uniqueId de um dispositivo, e um avatar não tem
+                 * dispositivo — sem esta regra, toda foto de perfil responderia 403.
+                 *
+                 * De quem é a foto sai do próprio nome do arquivo, então autorizar é a mesma
+                 * pergunta de "posso ver esta conta?": ela mesma, um administrador, ou o gerente
+                 * dela. Nome fora do formato devolve dono 0, que não é conta de ninguém e cai no
+                 * 403 abaixo.
+                 */
+                if (UserAvatar.DIRECTORY.equals(parts[1])) {
+                    long ownerId = parts.length >= 3 ? UserAvatar.ownerId(parts[2]) : 0;
+                    if (ownerId > 0) {
+                        permissionsServiceProvider.get().checkUser(userId, ownerId);
+                        chain.doFilter(request, response);
+                        return;
+                    }
+                } else {
+                    Device device = storage.getObject(Device.class, new Request(
+                            new Columns.All(), new Condition.Equals("uniqueId", parts[1])));
+                    if (device != null) {
+                        permissionsServiceProvider.get().checkPermission(Device.class, userId, device.getId());
+                        chain.doFilter(request, response);
+                        return;
+                    }
                 }
             }
 

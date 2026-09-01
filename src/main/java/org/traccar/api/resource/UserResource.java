@@ -26,13 +26,16 @@ import org.traccar.api.BaseObjectResource;
 import org.traccar.api.security.ServiceAccountUser;
 import org.traccar.config.Config;
 import org.traccar.config.Keys;
+import org.traccar.database.MediaManager;
 import org.traccar.helper.LogAction;
 import org.traccar.helper.SessionHelper;
 import org.traccar.helper.model.NotificationUtil;
+import org.traccar.helper.model.UserAvatar;
 import org.traccar.helper.model.UserUtil;
 import org.traccar.model.Device;
 import org.traccar.model.ManagedUser;
 import org.traccar.model.Notification;
+import org.traccar.model.ObjectOperation;
 import org.traccar.model.Permission;
 import org.traccar.model.User;
 import org.traccar.session.cache.CacheManager;
@@ -46,13 +49,18 @@ import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Stream;
@@ -64,8 +72,16 @@ public class UserResource extends BaseObjectResource<User> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UserResource.class);
 
+    private static final int DEFAULT_BUFFER_SIZE = 8192;
+
+    /** O mesmo teto da foto de veículo ({@code DeviceResource}). */
+    private static final int IMAGE_SIZE_LIMIT = 500000;
+
     @Inject
     private Config config;
+
+    @Inject
+    private MediaManager mediaManager;
 
     @Inject
     private LogAction actionLogger;
@@ -180,7 +196,32 @@ public class UserResource extends BaseObjectResource<User> {
     @Path("{id}")
     @DELETE
     public Response remove(@PathParam("id") long id) throws Exception {
+        // Lido ANTES da exclusão: depois não há mais linha de onde tirar o nome do arquivo.
+        User user = storage.getObject(User.class, new Request(
+                new Columns.All(), new Condition.Equals("id", id)));
+
         Response response = super.remove(id);
+
+        /*
+         * Acréscimo da RDM: a foto de perfil sai junto com a conta.
+         *
+         * Sem isto o binário ficava no disco para sempre, e um administrador ainda conseguia
+         * baixá-lo pela URL — a autorização em MediaFilter passa para administrador mesmo quando
+         * o dono do arquivo não existe mais.
+         */
+        if (user != null) {
+            String avatar = user.getString(UserAvatar.ATTRIBUTE_FILE);
+            if (avatar != null && UserAvatar.ownerId(avatar) == id) {
+                try {
+                    mediaManager.deleteFile(UserAvatar.DIRECTORY, avatar);
+                } catch (IOException e) {
+                    // A conta já foi embora: falhar aqui devolveria erro para uma exclusão que
+                    // deu certo, e quem tentasse de novo esbarraria num usuário inexistente.
+                    LOGGER.warn("User avatar delete failed", e);
+                }
+            }
+        }
+
         if (getUserId() == id) {
             request.getSession().removeAttribute(SessionHelper.USER_ID_KEY);
         }
@@ -195,6 +236,98 @@ public class UserResource extends BaseObjectResource<User> {
             throw new SecurityException("One-time password is disabled");
         }
         return new GoogleAuthenticator().createCredentials().getKey();
+    }
+
+
+    /**
+     * Foto de perfil — envio.
+     *
+     * <p>Acréscimo da RDM; ver {@link UserAvatar} para o porquê da pasta própria e do nome
+     * derivado do id.
+     *
+     * <p>Ao contrário da foto de veículo, aqui o vínculo é gravado <b>pelo servidor</b>, na mesma
+     * chamada. No veículo o cliente precisa de um segundo PUT para escrever o atributo, e uma
+     * falha no meio deixa o arquivo no disco sem ninguém apontando para ele. Como o nome do
+     * arquivo é derivado do id, o servidor tem tudo o que precisa para fechar sozinho.
+     *
+     * @return o nome do arquivo, que o painel usa em {@code /api/media/avatars/<nome>}
+     */
+    @Path("{id}/image")
+    @POST
+    @Consumes("image/*")
+    public Response uploadImage(
+            @PathParam("id") long id, File file,
+            @HeaderParam(HttpHeaders.CONTENT_TYPE) String type) throws Exception {
+
+        permissionsService.checkUser(getUserId(), id);
+        permissionsService.checkEdit(getUserId(), User.class, false, false);
+
+        User user = storage.getObject(User.class, new Request(
+                new Columns.All(), new Condition.Equals("id", id)));
+        if (user == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+
+        String extension = UserAvatar.extension(type);
+        String name = UserAvatar.fileName(id, extension);
+
+        try (var input = new FileInputStream(file);
+                var output = mediaManager.createFileStream(
+                        UserAvatar.DIRECTORY, "user-" + id, extension)) {
+            long transferred = 0;
+            byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
+            int read;
+            while ((read = input.read(buffer, 0, buffer.length)) >= 0) {
+                output.write(buffer, 0, read);
+                transferred += read;
+                if (transferred > IMAGE_SIZE_LIMIT) {
+                    throw new IllegalArgumentException("Image size limit exceeded");
+                }
+            }
+        }
+
+        user.set(UserAvatar.ATTRIBUTE_FILE, name);
+        user.set(UserAvatar.ATTRIBUTE_TIME, String.valueOf(System.currentTimeMillis()));
+        storage.updateObject(user, new Request(
+                new Columns.Include("attributes"), new Condition.Equals("id", id)));
+        cacheManager.invalidateObject(true, User.class, id, ObjectOperation.UPDATE);
+        actionLogger.edit(request, getUserId(), user);
+
+        return Response.ok(name).build();
+    }
+
+    /**
+     * Foto de perfil — remoção.
+     *
+     * <p>Apaga o arquivo e o vínculo. Limpar só o atributo deixaria o binário baixável por quem
+     * guardou a URL, o que não é o que "remover a foto" promete.
+     */
+    @Path("{id}/image")
+    @DELETE
+    public Response deleteImage(@PathParam("id") long id) throws Exception {
+
+        permissionsService.checkUser(getUserId(), id);
+        permissionsService.checkEdit(getUserId(), User.class, false, false);
+
+        User user = storage.getObject(User.class, new Request(
+                new Columns.All(), new Condition.Equals("id", id)));
+        if (user == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+
+        String name = user.getString(UserAvatar.ATTRIBUTE_FILE);
+        if (name != null && UserAvatar.ownerId(name) == id) {
+            mediaManager.deleteFile(UserAvatar.DIRECTORY, name);
+        }
+
+        user.getAttributes().remove(UserAvatar.ATTRIBUTE_FILE);
+        user.getAttributes().remove(UserAvatar.ATTRIBUTE_TIME);
+        storage.updateObject(user, new Request(
+                new Columns.Include("attributes"), new Condition.Equals("id", id)));
+        cacheManager.invalidateObject(true, User.class, id, ObjectOperation.UPDATE);
+        actionLogger.edit(request, getUserId(), user);
+
+        return Response.noContent().build();
     }
 
 }
