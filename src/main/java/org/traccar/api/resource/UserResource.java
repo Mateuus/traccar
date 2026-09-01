@@ -16,20 +16,26 @@
 package org.traccar.api.resource;
 
 import com.warrenstrange.googleauth.GoogleAuthenticator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.core.Context;
 import org.traccar.api.BaseObjectResource;
+import org.traccar.api.security.ServiceAccountUser;
 import org.traccar.config.Config;
 import org.traccar.config.Keys;
 import org.traccar.helper.LogAction;
 import org.traccar.helper.SessionHelper;
+import org.traccar.helper.model.NotificationUtil;
 import org.traccar.helper.model.UserUtil;
 import org.traccar.model.Device;
 import org.traccar.model.ManagedUser;
+import org.traccar.model.Notification;
 import org.traccar.model.Permission;
 import org.traccar.model.User;
+import org.traccar.session.cache.CacheManager;
 import org.traccar.storage.StorageException;
 import org.traccar.storage.query.Columns;
 import org.traccar.storage.query.Condition;
@@ -56,11 +62,16 @@ import java.util.stream.Stream;
 @Consumes(MediaType.APPLICATION_JSON)
 public class UserResource extends BaseObjectResource<User> {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(UserResource.class);
+
     @Inject
     private Config config;
 
     @Inject
     private LogAction actionLogger;
+
+    @Inject
+    private CacheManager cacheManager;
 
     @Context
     private HttpServletRequest request;
@@ -138,7 +149,32 @@ public class UserResource extends BaseObjectResource<User> {
             storage.addPermission(new Permission(User.class, getUserId(), ManagedUser.class, entity.getId()));
             actionLogger.link(request, getUserId(), User.class, getUserId(), ManagedUser.class, entity.getId());
         }
+
+        copyDefaultNotifications(entity.getId());
+
         return Response.ok(entity).build();
+    }
+
+    /**
+     * Repete no usuário recém-criado as notificações marcadas como padrão (ver {@link NotificationUtil}).
+     *
+     * <p>Nada aqui pode derrubar o cadastro: o usuário já está gravado quando este método roda, e
+     * falhar agora devolveria erro para uma conta que <b>existe</b> — quem tentasse de novo esbarraria
+     * no e-mail duplicado. Por isso a falha é registrada no log e o cadastro segue.
+     */
+    private void copyDefaultNotifications(long userId) {
+        try {
+            // A conta de serviço não é dona de nada: vale como "sem criador", e o molde vem dos administradores.
+            long creatorId = getUserId() != ServiceAccountUser.ID ? getUserId() : 0;
+            for (Notification notification : NotificationUtil.getDefaults(storage, creatorId)) {
+                long id = NotificationUtil.copyTo(storage, notification, userId);
+                storage.addPermission(new Permission(User.class, userId, Notification.class, id));
+                cacheManager.invalidatePermission(true, User.class, userId, Notification.class, id, true);
+                actionLogger.link(request, getUserId(), User.class, userId, Notification.class, id);
+            }
+        } catch (Exception error) {
+            LOGGER.warn("Default notifications copy failed", error);
+        }
     }
 
     @Path("{id}")
