@@ -1464,6 +1464,39 @@ public final class Keys {
             "direct");
 
     /**
+     * RDM: VAPID public key for the "webpush" notificator, base64url encoded (uncompressed P-256
+     * point). Served to the browser by the push subscription API — never hardcode it in the client,
+     * or rotating the pair silently breaks every delivery with 403.
+     */
+    public static final ConfigKey<String> NOTIFICATOR_WEBPUSH_PUBLIC_KEY = new StringConfigKey(
+            "notificator.webpush.publicKey",
+            List.of(KeyType.CONFIG));
+
+    /**
+     * RDM: VAPID private key for the "webpush" notificator, base64url encoded (32 byte scalar).
+     */
+    public static final ConfigKey<String> NOTIFICATOR_WEBPUSH_PRIVATE_KEY = new StringConfigKey(
+            "notificator.webpush.privateKey",
+            List.of(KeyType.CONFIG));
+
+    /**
+     * RDM: contact for the push service to reach the server operator, as required by RFC 8292.
+     * Must be a "mailto:" or "https:" URI.
+     */
+    public static final ConfigKey<String> NOTIFICATOR_WEBPUSH_SUBJECT = new StringConfigKey(
+            "notificator.webpush.subject",
+            List.of(KeyType.CONFIG),
+            "mailto:contato@rdmrastreamento.com.br");
+
+    /**
+     * RDM: how long the push service should retain an undelivered message, in seconds.
+     */
+    public static final ConfigKey<Integer> NOTIFICATOR_WEBPUSH_TTL = new IntegerConfigKey(
+            "notificator.webpush.ttl",
+            List.of(KeyType.CONFIG),
+            3600);
+
+    /**
      * Pushover notification user name.
      */
     public static final ConfigKey<String> NOTIFICATOR_PUSHOVER_USER = new StringConfigKey(

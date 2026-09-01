@@ -40,5 +40,6 @@
 
   <!-- RDM: sempre por ultimo, para nao colidir com os includes do upstream -->
   <include file="changelog-rdm-bigint-positions.xml" relativeToChangelogFile="true" />
+  <include file="changelog-rdm-webpush.xml" relativeToChangelogFile="true" />
 
 </databaseChangeLog>

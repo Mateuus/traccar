@@ -24,6 +24,7 @@ import org.traccar.forward.EventData;
 import org.traccar.forward.EventForwarder;
 import org.traccar.geocoder.Geocoder;
 import org.traccar.helper.DateUtil;
+import org.traccar.helper.model.NotificationUtil;
 import org.traccar.model.Calendar;
 import org.traccar.model.Device;
 import org.traccar.model.Event;
@@ -96,6 +97,9 @@ public class NotificationManager {
 
         var notifications = cacheManager.getDeviceNotifications(event.getDeviceId()).stream()
                 .filter(notification -> notification.getType().equals(event.getType()))
+                // Interruptor da regra: desligada, ela continua cadastrada e não dispara. É o que
+                // sobra para quem recebeu uma regra da administração e não pode editá-la nem apagá-la.
+                .filter(notification -> !notification.getBoolean(NotificationUtil.ATTRIBUTE_DISABLED))
                 .filter(notification -> {
                     if (event.getType().equals(Event.TYPE_ALARM)) {
                         String alarmsAttribute = notification.getString("alarms");

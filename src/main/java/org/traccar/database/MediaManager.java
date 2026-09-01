@@ -68,6 +68,22 @@ public class MediaManager {
         return new FileOutputStream(createFile(uniqueId, name + "." + extension));
     }
 
+    /**
+     * Apaga um arquivo da mídia, se ele existir.
+     *
+     * <p>Acréscimo da RDM: o Traccar de origem só escreve. Quem remove a foto de perfil precisa
+     * que o arquivo saia do disco — deixar o binário para trás com o vínculo apagado significaria
+     * que a foto "removida" continua baixável por quem souber a URL.
+     *
+     * @return {@code true} se o arquivo existia e foi apagado
+     */
+    public boolean deleteFile(String uniqueId, String name) throws IOException {
+        if (path == null) {
+            return false;
+        }
+        return Files.deleteIfExists(createFile(uniqueId, name).toPath());
+    }
+
     public String writeFile(String uniqueId, ByteBuf buf, String extension) {
         if (path != null) {
             int size = buf.readableBytes();

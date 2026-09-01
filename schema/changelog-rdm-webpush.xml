@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.4.xsd"
+  logicalFilePath="changelog-rdm-webpush">
+
+  <!--
+    RDM: inscricoes de Web Push (notificator "webpush").
+
+    O upstream nao tem Web Push: o unico push movel dele e o Firebase, que guarda os tokens no
+    atributo "notificationTokens" do usuario. Atributo nao serve aqui — uma inscricao de Web Push
+    sao tres campos por aparelho (endpoint, p256dh, auth), a limpeza de inscricao morta precisa
+    apagar UMA linha, e o envio consulta por usuario. Isso e tabela.
+  -->
+
+  <changeSet author="rdm" id="rdm-webpush-subscriptions">
+
+    <createTable tableName="tc_push_subscriptions">
+      <column name="id" type="INT" autoIncrement="true">
+        <constraints primaryKey="true" />
+      </column>
+      <column name="userid" type="INT">
+        <constraints nullable="false" />
+      </column>
+      <!--
+        512 e o teto pratico dos endpoints em uso (fcm.googleapis.com, web.push.apple.com,
+        updates.push.services.mozilla.com). Com utf8mb4 isso da 2048 bytes de chave, dentro do
+        limite de 3072 do InnoDB — o indice unico abaixo depende disso.
+      -->
+      <column name="endpoint" type="VARCHAR(512)">
+        <constraints nullable="false" />
+      </column>
+      <column name="publickey" type="VARCHAR(255)">
+        <constraints nullable="false" />
+      </column>
+      <column name="authsecret" type="VARCHAR(255)">
+        <constraints nullable="false" />
+      </column>
+      <column name="useragent" type="VARCHAR(255)" />
+      <column name="createdat" type="TIMESTAMP" />
+    </createTable>
+
+    <!--
+      O endpoint identifica a inscricao. Sem esta restricao, reabrir o painel no mesmo aparelho
+      criaria linha nova a cada visita e o usuario receberia a notificacao repetida N vezes.
+    -->
+    <addUniqueConstraint tableName="tc_push_subscriptions" columnNames="endpoint"
+                         constraintName="uk_push_subscriptions_endpoint" />
+
+    <createIndex indexName="idx_push_subscriptions_userid" tableName="tc_push_subscriptions">
+      <column name="userid" />
+    </createIndex>
+
+    <!-- Conta apagada leva junto as inscricoes: push para usuario que nao existe mais e vazamento. -->
+    <addForeignKeyConstraint baseTableName="tc_push_subscriptions" baseColumnNames="userid"
+                             constraintName="fk_push_subscriptions_userid"
+                             referencedTableName="tc_users" referencedColumnNames="id"
+                             onDelete="CASCADE" />
+
+  </changeSet>
+
+</databaseChangeLog>

@@ -17,8 +17,10 @@ package org.traccar.api.resource;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -28,6 +30,7 @@ import jakarta.ws.rs.core.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.traccar.api.ExtendedObjectResource;
+import org.traccar.helper.model.NotificationUtil;
 import org.traccar.model.Event;
 import org.traccar.model.ManagedUser;
 import org.traccar.model.Notification;
@@ -62,6 +65,40 @@ public class NotificationResource extends ExtendedObjectResource<Notification> {
 
     public NotificationResource() {
         super(Notification.class, "description", List.of("description"));
+    }
+
+    /*
+     * ── Regras da administração ───────────────────────────────────────────────────────────────
+     *
+     * As notificações que o servidor copia para cada usuário novo (ver `NotificationUtil`) são
+     * regras da casa: o cliente pode **desligá-las**, porque avisar demais também atrapalha, mas
+     * não editar nem excluir — senão o padrão que a administração combinou vira outra coisa em cada
+     * conta, sem ninguém saber.
+     *
+     * A trava mora aqui, e não na tela: esconder o botão no painel não impede um PUT direto na API.
+     * O administrador passa por cima das duas.
+     */
+
+    @Path("{id}")
+    @PUT
+    @Override
+    public Response update(Notification entity) throws Exception {
+        permissionsService.checkPermission(Notification.class, getUserId(), entity.getId());
+        Notification before = storage.getObject(Notification.class, new Request(
+                new Columns.All(), new Condition.Equals("id", entity.getId())));
+        NotificationUtil.checkEditable(before, entity, !permissionsService.notAdmin(getUserId()));
+        return super.update(entity);
+    }
+
+    @Path("{id}")
+    @DELETE
+    @Override
+    public Response remove(@PathParam("id") long id) throws Exception {
+        permissionsService.checkPermission(Notification.class, getUserId(), id);
+        Notification notification = storage.getObject(Notification.class, new Request(
+                new Columns.All(), new Condition.Equals("id", id)));
+        NotificationUtil.checkRemovable(notification, !permissionsService.notAdmin(getUserId()));
+        return super.remove(id);
     }
 
     @GET
