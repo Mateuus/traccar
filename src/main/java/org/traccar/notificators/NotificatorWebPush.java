@@ -23,6 +23,7 @@ import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.Entity;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Variant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.traccar.config.Config;
@@ -46,6 +47,7 @@ import org.traccar.storage.query.Request;
 import java.security.interfaces.ECPrivateKey;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -201,13 +203,26 @@ public class NotificatorWebPush extends Notificator {
 
         var request = client.target(subscription.getEndpoint()).request()
                 .header("Authorization", authorization)
-                .header("Content-Encoding", "aes128gcm")
                 .header("TTL", ttl)
                 .header("Urgency", "high");
 
+        /*
+         * O Content-Encoding vai pela Variant da entidade, NAO por .header(...).
+         *
+         * Custou uma investigacao inteira: Content-Encoding e cabecalho de ENTIDADE, e o Jersey
+         * reescreve os cabecalhos de entidade a partir da Entity na hora de serializar o corpo.
+         * Um .header("Content-Encoding", ...) posto no Invocation.Builder e apagado em silencio —
+         * sem excecao, sem log, sem nada na resposta.
+         *
+         * O sintoma nao aponta para ca em momento nenhum: o push serve o corpo cifrado sem dizer
+         * como decifra-lo, o push service ACEITA (200/201, nenhum erro para o log) e o navegador
+         * entrega o evento ao service worker com `event.data` NULO. A notificacao aparece, mas com
+         * o texto generico de fallback do worker e sem `tag` — dai tambem as dezenas de alertas
+         * empilhados em vez de um por veiculo.
+         */
         return WebHelper.post(
                 request,
-                Entity.entity(body, MediaType.APPLICATION_OCTET_STREAM_TYPE),
+                Entity.entity(body, new Variant(MediaType.APPLICATION_OCTET_STREAM_TYPE, (Locale) null, "aes128gcm")),
                 response -> handleResponse(subscription, response));
     }
 

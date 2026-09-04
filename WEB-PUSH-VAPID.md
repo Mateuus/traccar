@@ -337,6 +337,40 @@ inscrição do navegador, para o estado parar de mentir.
 **Regra geral:** todo DTO que recebe JSON de fora precisa de `ignoreUnknown`. O navegador pode
 acrescentar campo novo a qualquer momento, e a falha aparece como um 400 sem explicação.
 
+**A armadilha do Jersey — `Content-Encoding` apagado em silêncio (corrigida em 2026-09-02).**
+`Content-Encoding` é cabeçalho de **entidade**, e o Jersey reescreve os cabeçalhos de entidade a
+partir da `Entity` na hora de serializar o corpo. Um `.header("Content-Encoding", "aes128gcm")`
+posto no `Invocation.Builder` **é descartado** — sem exceção, sem log, sem nada na resposta. O
+único jeito que funciona é declarar a codificação na entidade:
+
+```java
+Entity.entity(body, new Variant(MediaType.APPLICATION_OCTET_STREAM_TYPE, (Locale) null, "aes128gcm"))
+```
+
+O sintoma não aponta para o servidor em momento nenhum, e foi o que a investigação seguiu por horas:
+
+- o push service **aceita** o POST (201, nada no log do Traccar);
+- a notificação **chega** ao aparelho, no horário certo, com o ícone certo;
+- mas o navegador recebe um corpo cifrado sem saber que é `aes128gcm`, então entrega o evento ao
+  service worker com **`event.data` nulo**;
+- o worker cai no fallback e mostra "RDM Rastreamento / Novo alerta na sua frota.", sem `tag` — daí
+  também as dezenas de alertas empilhados, em vez de um por veículo (a `tag` vem no payload).
+
+Ou seja: parece problema de template, de formatter ou de tradução, e não é nenhum dos três — o
+payload sempre esteve certo, só chegou sem etiqueta de como abrir.
+
+**Como conferir sem depender do navegador.** Crie uma inscrição sintética apontando para um
+servidor HTTP seu (`endpoint` = `http://<host>:<porta>/diag`) com um par P-256 que você gerou,
+dispare um evento e leia os cabeçalhos crus do POST. `Content-Encoding: aes128gcm` tem de estar lá.
+Com a chave privada do par, o corpo capturado ainda pode ser decifrado (ECDH → HKDF → AES-GCM,
+mesmos passos de `WebPushEncryption`, ao contrário) para conferir o JSON que o worker receberia.
+
+**Idioma da notificação.** O texto sai do template de `templates/notifications/<idioma>/`, e o
+idioma vem do atributo `language` do usuário ou do servidor (`UserUtil.getLanguage`). **Sem
+`language` definido em nenhum dos dois, o `LocaleManager` cai em `en`** e a notificação chega em
+inglês, mesmo com `pt_BR` presente na pasta. Não é bug do push: vale igual para e-mail e para o
+canal `web`.
+
 **Diagnóstico.** Erros de inscrição (`Registration failed - ...`) acontecem antes de o servidor
 entrar na história: são do navegador com o push service dele. Erros de entrega aparecem no log do
 Traccar como `Web push delivery failed with status N`.
