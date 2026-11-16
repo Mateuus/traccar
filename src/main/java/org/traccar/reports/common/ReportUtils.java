@@ -16,14 +16,13 @@
  */
 package org.traccar.reports.common;
 
-import jakarta.annotation.Nullable;
-import jakarta.inject.Inject;
 import org.apache.velocity.app.VelocityEngine;
 import org.apache.velocity.tools.generic.DateTool;
 import org.apache.velocity.tools.generic.NumberTool;
 import org.jxls.area.Area;
 import org.jxls.builder.xls.XlsCommentAreaBuilder;
 import org.jxls.common.CellRef;
+import org.jxls.common.Context;
 import org.jxls.formula.StandardFormulaProcessor;
 import org.jxls.transform.Transformer;
 import org.jxls.transform.poi.PoiTransformer;
@@ -37,6 +36,7 @@ import org.traccar.helper.model.AttributeUtil;
 import org.traccar.helper.model.PositionUtil;
 import org.traccar.helper.model.UserUtil;
 import org.traccar.model.BaseModel;
+import org.traccar.model.CompactPosition;
 import org.traccar.model.Device;
 import org.traccar.model.Driver;
 import org.traccar.model.Event;
@@ -56,6 +56,8 @@ import org.traccar.storage.query.Condition;
 import org.traccar.storage.query.Order;
 import org.traccar.storage.query.Request;
 
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -165,7 +167,7 @@ public class ReportUtils {
         return null;
     }
 
-    public org.jxls.common.Context initializeContext(long userId) throws StorageException {
+    public Context initializeContext(long userId) throws StorageException {
         var server = permissionsService.getServer();
         var user = permissionsService.getUser(userId);
         var context = PoiTransformer.createInitialContext();
@@ -182,7 +184,7 @@ public class ReportUtils {
     }
 
     public void processTemplateWithSheets(
-            InputStream templateStream, OutputStream targetStream, org.jxls.common.Context context) throws IOException {
+            InputStream templateStream, OutputStream targetStream, Context context) throws IOException {
 
         Transformer transformer = TransformerFactory.createTransformer(templateStream, targetStream);
         List<Area> xlsAreas = new XlsCommentAreaBuilder(transformer).build();
@@ -205,6 +207,8 @@ public class ReportUtils {
         long deviceId = startTrip.getDeviceId();
         trip.setDeviceId(deviceId);
         trip.setDeviceName(device.getName());
+
+        trip.setBusiness(startTrip.getBoolean(Position.KEY_BUSINESS));
 
         trip.setStartPositionId(startTrip.getId());
         trip.setStartLat(startTrip.getLatitude());
@@ -338,15 +342,17 @@ public class ReportUtils {
             double minDistance = AttributeUtil.lookup(attributeProvider, Keys.REPORT_TRIP_MIN_DISTANCE);
             long minDuration = AttributeUtil.lookup(attributeProvider, Keys.REPORT_TRIP_MIN_DURATION) * 1000;
             long stopGap = AttributeUtil.lookup(attributeProvider, Keys.REPORT_TRIP_STOP_GAP) * 1000;
-            Deque<Position> motionPositions = new ArrayDeque<>();
+            Deque<CompactPosition> motionPositions = new ArrayDeque<>();
             NewMotionState motionState = new NewMotionState();
             motionState.setPositions(motionPositions);
 
-            try (var stream = PositionUtil.getPositionsStream(storage, device.getId(), from, to, 0)) {
+            try (var stream = PositionUtil.getPositionsStream(storage, device.getId(), from, to, 0, 0)) {
                 for (var iterator = stream.iterator(); iterator.hasNext();) {
                     Position position = iterator.next();
                     if (lastPosition == null) {
-                        boolean initialValue = position.getBoolean(Position.KEY_MOTION);
+                        boolean initialValue = position.getBoolean(
+                                tripsConfig.getUseIgnition() && position.hasAttribute(Position.KEY_IGNITION)
+                                        ? Position.KEY_IGNITION : Position.KEY_MOTION);
                         if (initialValue == trips) {
                             startPosition = position;
                             maxSpeed = position.getSpeed();
@@ -356,7 +362,8 @@ public class ReportUtils {
                     }
                     maxSpeed = Math.max(maxSpeed, position.getSpeed());
                     positionMap.put(position.getId(), position);
-                    NewMotionProcessor.updateState(motionState, position, minDistance, minDuration, stopGap);
+                    NewMotionProcessor.updateState(
+                            motionState, position, minDistance, minDuration, stopGap, tripsConfig.getUseIgnition());
                     if (!motionState.getEvents().isEmpty()) {
                         for (Event event : motionState.getEvents()) {
                             event.set("maxSpeed", maxSpeed);
@@ -364,13 +371,13 @@ public class ReportUtils {
                         }
                         maxSpeed = 0;
                     }
-                    motionPositions.add(position);
+                    motionPositions.add(new CompactPosition(position));
                     while (motionPositions.size() > 1) {
                         var motionIterator = motionPositions.iterator();
                         motionIterator.next();
-                        Position second = motionIterator.next();
-                        Position last = motionPositions.peekLast();
-                        if (last.getFixTime().getTime() - second.getFixTime().getTime() >= minDuration) {
+                        CompactPosition second = motionIterator.next();
+                        CompactPosition last = motionPositions.peekLast();
+                        if (last.fixTime().getTime() - second.fixTime().getTime() >= minDuration) {
                             motionPositions.poll();
                         } else {
                             break;
@@ -382,7 +389,7 @@ public class ReportUtils {
         } else {
             MotionState motionState = new MotionState();
 
-            try (var stream = PositionUtil.getPositionsStream(storage, device.getId(), from, to, 0)) {
+            try (var stream = PositionUtil.getPositionsStream(storage, device.getId(), from, to, 0, 0)) {
                 for (var iterator = stream.iterator(); iterator.hasNext();) {
                     Position position = iterator.next();
                     if (lastPosition == null) {

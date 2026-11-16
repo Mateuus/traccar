@@ -16,14 +16,14 @@
 package org.traccar.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-
 import org.apache.commons.lang3.builder.EqualsBuilder;
-import org.traccar.storage.QueryIgnore;
 import org.traccar.helper.Hashing;
+import org.traccar.storage.QueryIgnore;
 import org.traccar.storage.StorageName;
 
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Locale;
 
 @StorageName("tc_users")
 public class User extends ExtendedModel implements UserRestrictions, Disableable {
@@ -45,7 +45,7 @@ public class User extends ExtendedModel implements UserRestrictions, Disableable
     }
 
     public void setLogin(String login) {
-        this.login = login;
+        this.login = login != null ? login.toLowerCase(Locale.ROOT) : null;
     }
 
     private String email;
@@ -55,7 +55,7 @@ public class User extends ExtendedModel implements UserRestrictions, Disableable
     }
 
     public void setEmail(String email) {
-        this.email = email.trim();
+        this.email = email.trim().toLowerCase(Locale.ROOT);
     }
 
     private String phone;

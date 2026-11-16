@@ -15,8 +15,6 @@
  */
 package org.traccar.handler;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Singleton;
 import org.apache.commons.jexl3.JexlBuilder;
 import org.apache.commons.jexl3.JexlEngine;
 import org.apache.commons.jexl3.JexlException;
@@ -33,6 +31,8 @@ import org.traccar.model.Device;
 import org.traccar.model.Position;
 import org.traccar.session.cache.CacheManager;
 
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import java.lang.invoke.MethodHandle;
 import java.util.Date;
 import java.util.HashMap;
@@ -71,6 +71,8 @@ public class ComputedAttributesProvider {
                 .structuredLiteral(true);
         engine = new JexlBuilder()
                 .strict(true)
+                .cache(config.getInteger(Keys.PROCESSING_COMPUTED_ATTRIBUTES_CACHE_SIZE))
+                .cacheThreshold(config.getInteger(Keys.PROCESSING_COMPUTED_ATTRIBUTES_CACHE_THRESHOLD))
                 .namespaces(Map.of("math", Math.class))
                 .sandbox(sandbox)
                 .create();

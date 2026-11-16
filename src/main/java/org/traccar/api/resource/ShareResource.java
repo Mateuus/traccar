@@ -15,13 +15,6 @@
  */
 package org.traccar.api.resource;
 
-import java.io.IOException;
-import java.security.GeneralSecurityException;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Locale;
-
 import org.traccar.api.BaseResource;
 import org.traccar.api.signature.TokenManager;
 import org.traccar.config.Config;
@@ -29,8 +22,10 @@ import org.traccar.config.Keys;
 import org.traccar.model.BaseModel;
 import org.traccar.model.Device;
 import org.traccar.model.Group;
+import org.traccar.model.ObjectOperation;
 import org.traccar.model.Permission;
 import org.traccar.model.User;
+import org.traccar.session.cache.CacheManager;
 import org.traccar.storage.StorageException;
 import org.traccar.storage.query.Columns;
 import org.traccar.storage.query.Condition;
@@ -47,8 +42,13 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 
 @Path("share")
 @Produces(MediaType.APPLICATION_JSON)
@@ -61,10 +61,12 @@ public class ShareResource extends BaseResource {
     @Inject
     private TokenManager tokenManager;
 
+    @Inject
+    private CacheManager cacheManager;
+
     private String share(
             User user, Class<? extends BaseModel> clazz, long id, Date expiration,
-            boolean allowCommands, boolean allowReports, String name)
-            throws StorageException, GeneralSecurityException, IOException {
+            boolean allowCommands, boolean allowReports, String name) throws Exception {
 
         if (permissionsService.getServer().getBoolean(Keys.DEVICE_SHARE_DISABLE.getKey())) {
             throw new SecurityException("Sharing is disabled");
@@ -72,7 +74,8 @@ public class ShareResource extends BaseResource {
         if (user.getTemporary()) {
             throw new SecurityException("Temporary user");
         }
-        if (user.getExpirationTime() != null && user.getExpirationTime().before(expiration)) {
+        if (user.getExpirationTime() != null
+                && (expiration == null || user.getExpirationTime().before(expiration))) {
             expiration = user.getExpirationTime();
         }
 
@@ -81,23 +84,11 @@ public class ShareResource extends BaseResource {
                 new Condition.And(
                         new Condition.Equals("id", id),
                         new Condition.Permission(User.class, user.getId(), clazz))));
+        if (object == null) {
+            throw new SecurityException("Object not found or no permission");
+        }
 
-        String shareEmail;
-        if (clazz == Device.class) {
-            shareEmail = user.getEmail() + ":" + ((Device) object).getUniqueId();
-        } else {
-            shareEmail = user.getEmail() + ":" + clazz.getSimpleName().toLowerCase(Locale.ROOT) + ":" + object.getId();
-        }
-        /*
-         * RDM: o e-mail e a CHAVE do compartilhamento, e no upstream ele so tem (dono, objeto) —
-         * dai existir um unico compartilhamento por veiculo, e o segundo sobrescrever o primeiro.
-         * Com nome, a chave ganha um terceiro pedaco e passam a caber varios: "para o cliente",
-         * "para o guincho", cada um com prazo e permissoes proprios. Sem nome, a chave e
-         * exatamente a do upstream — quem ja tinha um compartilhamento continua com aquele.
-         */
-        if (name != null && !name.isBlank()) {
-            shareEmail = shareEmail + ":" + name.trim();
-        }
+        String shareEmail = shareEmail(user, object, name);
 
         User share = storage.getObject(User.class, new Request(
                 new Columns.All(), new Condition.Equals("email", shareEmail)));
@@ -135,7 +126,8 @@ public class ShareResource extends BaseResource {
             storage.addPermission(new Permission(User.class, share.getId(), clazz, id));
         } else {
             /*
-             * RDM: o upstream reaproveita o usuario existente SEM tocar nele.
+             * RDM: o upstream reaproveitava o usuario existente SEM tocar nele (e, desde a 6.17,
+             * responde 409); aqui o compartilhamento existente e atualizado.
              *
              * O e-mail do compartilhamento e derivado de (dono, veiculo), entao o segundo
              * compartilhamento do mesmo veiculo cai sempre aqui — e, no upstream, com as permissoes
@@ -153,6 +145,8 @@ public class ShareResource extends BaseResource {
             storage.updateObject(share, new Request(
                     new Columns.Include("expirationTime", "limitCommands", "disableReports"),
                     new Condition.Equals("id", share.getId())));
+            // sessao aberta com este link passa a ver as permissoes novas sem relogar
+            cacheManager.invalidateObject(true, User.class, share.getId(), ObjectOperation.UPDATE);
         }
 
         String token = tokenManager.generateToken(share.getId(), expiration);
@@ -171,6 +165,28 @@ public class ShareResource extends BaseResource {
         return token;
     }
 
+    /*
+     * O e-mail do usuario temporario e a CHAVE do compartilhamento. No upstream ela so tem
+     * (dono, objeto) — dai existir um unico compartilhamento por veiculo. RDM: com nome, a chave
+     * ganha um terceiro pedaco e passam a caber varios ("para o cliente", "para o guincho"), cada
+     * um com prazo e permissoes proprios. Sem nome, a chave e exatamente a do upstream. Sempre em
+     * minusculas: o User.setEmail do upstream normaliza o que grava (6.18), e a busca precisa
+     * bater com o gravado em banco de collation sensivel a caixa.
+     */
+    private static String shareEmail(User user, BaseModel object, String name) {
+        String shareEmail;
+        if (object instanceof Device device) {
+            shareEmail = user.getEmail() + ":" + device.getUniqueId();
+        } else {
+            shareEmail = user.getEmail() + ":"
+                    + object.getClass().getSimpleName().toLowerCase(Locale.ROOT) + ":" + object.getId();
+        }
+        if (name != null && !name.isBlank()) {
+            shareEmail = shareEmail + ":" + name.trim();
+        }
+        return shareEmail.trim().toLowerCase(Locale.ROOT);
+    }
+
     @Path("device")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @POST
@@ -180,8 +196,7 @@ public class ShareResource extends BaseResource {
             // RDM: `true` por omissao para o corpo do upstream continuar valendo igual.
             @FormParam("allowCommands") @DefaultValue("true") boolean allowCommands,
             @FormParam("allowReports") @DefaultValue("true") boolean allowReports,
-            @FormParam("name") String name)
-            throws StorageException, GeneralSecurityException, IOException {
+            @FormParam("name") String name) throws Exception {
         return share(
                 permissionsService.getUser(getUserId()), Device.class, deviceId, expiration,
                 allowCommands, allowReports, name);
@@ -273,7 +288,7 @@ public class ShareResource extends BaseResource {
      */
     @Path("{id}")
     @DELETE
-    public Response deleteShare(@PathParam("id") long id) throws StorageException {
+    public Response deleteShare(@PathParam("id") long id) throws Exception {
         User user = permissionsService.getUser(getUserId());
         User share = storage.getObject(User.class, new Request(
                 new Columns.All(), new Condition.Equals("id", id)));
@@ -282,7 +297,42 @@ public class ShareResource extends BaseResource {
             throw new SecurityException("Not a share of this user");
         }
         storage.removeObject(User.class, new Request(new Condition.Equals("id", id)));
+        cacheManager.invalidateObject(true, User.class, id, ObjectOperation.DELETE);
         return Response.noContent().build();
+    }
+
+    /*
+     * Rotas do upstream (6.17+): revogam o compartilhamento SEM nome do objeto, que e o unico que
+     * o painel oficial cria. Mesma regra de dono do DELETE /share/{id}; o painel da RDM usa aquele.
+     */
+    private Response removeDefaultShare(Class<? extends BaseModel> clazz, long objectId) throws Exception {
+        User user = permissionsService.getUser(getUserId());
+        BaseModel object = storage.getObject(clazz, new Request(
+                new Columns.All(),
+                new Condition.And(
+                        new Condition.Equals("id", objectId),
+                        new Condition.Permission(User.class, user.getId(), clazz))));
+        if (object == null) {
+            throw new SecurityException("Object not found or no permission");
+        }
+        User share = storage.getObject(User.class, new Request(
+                new Columns.All(), new Condition.Equals("email", shareEmail(user, object, null))));
+        if (share == null || !share.getTemporary()) {
+            throw new WebApplicationException(Response.Status.NOT_FOUND);
+        }
+        return deleteShare(share.getId());
+    }
+
+    @Path("device/{id}")
+    @DELETE
+    public Response removeDeviceShare(@PathParam("id") long deviceId) throws Exception {
+        return removeDefaultShare(Device.class, deviceId);
+    }
+
+    @Path("group/{id}")
+    @DELETE
+    public Response removeGroupShare(@PathParam("id") long groupId) throws Exception {
+        return removeDefaultShare(Group.class, groupId);
     }
 
     @Path("group")
@@ -293,8 +343,7 @@ public class ShareResource extends BaseResource {
             @FormParam("expiration") Date expiration,
             @FormParam("allowCommands") @DefaultValue("true") boolean allowCommands,
             @FormParam("allowReports") @DefaultValue("true") boolean allowReports,
-            @FormParam("name") String name)
-            throws StorageException, GeneralSecurityException, IOException {
+            @FormParam("name") String name) throws Exception {
         return share(
                 permissionsService.getUser(getUserId()), Group.class, groupId, expiration,
                 allowCommands, allowReports, name);

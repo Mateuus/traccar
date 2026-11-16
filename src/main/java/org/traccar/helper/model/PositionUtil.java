@@ -15,7 +15,6 @@
  */
 package org.traccar.helper.model;
 
-import org.traccar.model.BaseModel;
 import org.traccar.model.Device;
 import org.traccar.model.Position;
 import org.traccar.model.User;
@@ -28,7 +27,6 @@ import org.traccar.storage.query.Request;
 
 import java.util.Date;
 import java.util.List;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public final class PositionUtil {
@@ -56,18 +54,18 @@ public final class PositionUtil {
                         new Condition.Equals("deviceId", deviceId),
                         new Condition.Compare("fixTime", "<", from)),
                 new Order("fixTime", true, 1)));
-        Stream<Position> positions = getPositionsStream(storage, deviceId, from, to, 0);
+        Stream<Position> positions = getPositionsStream(storage, deviceId, from, to, 0, 0);
         return Stream.concat(extraStream, positions);
     }
 
     public static Stream<Position> getPositionsStream(
-            Storage storage, long deviceId, Date from, Date to, int limit) throws StorageException {
+            Storage storage, long deviceId, Date from, Date to, int limit, int offset) throws StorageException {
         return storage.getObjectsStream(Position.class, new Request(
                 new Columns.All(),
                 new Condition.And(
                         new Condition.Equals("deviceId", deviceId),
                         new Condition.Between("fixTime", from, to)),
-                new Order("fixTime", false, limit)));
+                new Order("fixTime", false, limit, offset)));
     }
 
     public static Position getEdgePosition(
@@ -81,16 +79,9 @@ public final class PositionUtil {
     }
 
     public static List<Position> getLatestPositions(Storage storage, long userId) throws StorageException {
-        var devices = storage.getObjects(Device.class, new Request(
-                new Columns.Include("id"),
-                new Condition.Permission(User.class, userId, Device.class)));
-        var deviceIds = devices.stream().map(BaseModel::getId).collect(Collectors.toUnmodifiableSet());
-
-        var positions = storage.getObjects(Position.class, new Request(
-                new Columns.All(), new Condition.LatestPositions()));
-        return positions.stream()
-                .filter(position -> deviceIds.contains(position.getDeviceId()))
-                .toList();
+        return storage.getObjects(Position.class, new Request(
+                new Columns.All(),
+                new Condition.LatestPositions(new Condition.Permission(User.class, userId, Device.class))));
     }
 
 }

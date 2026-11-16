@@ -19,19 +19,19 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import org.traccar.BaseProtocolDecoder;
-import org.traccar.helper.StringUtil;
-import org.traccar.session.DeviceSession;
 import org.traccar.NetworkMessage;
 import org.traccar.Protocol;
 import org.traccar.helper.BitUtil;
 import org.traccar.helper.BufferUtil;
 import org.traccar.helper.Parser;
 import org.traccar.helper.PatternBuilder;
+import org.traccar.helper.StringUtil;
 import org.traccar.helper.UnitsConverter;
 import org.traccar.model.CellTower;
 import org.traccar.model.Network;
 import org.traccar.model.Position;
 import org.traccar.model.WifiAccessPoint;
+import org.traccar.session.DeviceSession;
 
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -254,8 +254,14 @@ public class WatchProtocolDecoder extends BaseProtocolDecoder {
 
                     getLastLocation(position, null);
 
-                    position.set(Position.KEY_BATTERY_LEVEL, Integer.parseInt(values[2]));
-                    position.set(Position.KEY_STEPS, Integer.parseInt(values[0]));
+                    int steps = Integer.parseInt(values[0]);
+                    int rolling = Integer.parseInt(values[1]);
+                    int battery = Integer.parseInt(values[2]);
+                    if ("SG".equals(manufacturer) && steps == 0 && battery == 0 && rolling > 0 && rolling <= 100) {
+                        battery = rolling;
+                    }
+                    position.set(Position.KEY_BATTERY_LEVEL, battery);
+                    position.set(Position.KEY_STEPS, steps);
 
                     return position;
                 }

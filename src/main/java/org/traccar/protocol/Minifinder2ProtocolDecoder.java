@@ -20,17 +20,17 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import org.traccar.BaseProtocolDecoder;
-import org.traccar.helper.BufferUtil;
-import org.traccar.session.DeviceSession;
 import org.traccar.NetworkMessage;
 import org.traccar.Protocol;
 import org.traccar.helper.BitUtil;
+import org.traccar.helper.BufferUtil;
 import org.traccar.helper.Checksum;
 import org.traccar.helper.UnitsConverter;
 import org.traccar.model.CellTower;
 import org.traccar.model.Network;
 import org.traccar.model.Position;
 import org.traccar.model.WifiAccessPoint;
+import org.traccar.session.DeviceSession;
 
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -482,7 +482,9 @@ public class Minifinder2ProtocolDecoder extends BaseProtocolDecoder {
                     position.set("agpsLongitude", buf.readIntLE() / 10000000.0);
                 }
                 case 0x30 -> {
-                    int numberIndex = BitUtil.to(buf.readUnsignedByte(), 4);
+                    int flag = buf.readUnsignedByte();
+                    int numberIndex = BitUtil.to(flag, 4);
+                    position.set("number" + numberIndex + "Flag", flag);
                     position.set("number" + numberIndex, BufferUtil.readString(buf, length - 1));
                 }
                 case 0x31 -> {

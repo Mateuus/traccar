@@ -20,17 +20,17 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import org.traccar.BaseProtocolDecoder;
-import org.traccar.helper.BufferUtil;
-import org.traccar.session.DeviceSession;
 import org.traccar.NetworkMessage;
 import org.traccar.Protocol;
 import org.traccar.config.Keys;
 import org.traccar.helper.BitUtil;
+import org.traccar.helper.BufferUtil;
 import org.traccar.helper.Checksum;
 import org.traccar.helper.UnitsConverter;
 import org.traccar.model.CellTower;
 import org.traccar.model.Network;
 import org.traccar.model.Position;
+import org.traccar.session.DeviceSession;
 
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -190,6 +190,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
         Predicate<String> fmbXXX = (m) -> m != null && m.matches("FM[B-Z]...|MTB100|MSP500");
         Predicate<String> fmb6XX = (m) -> m != null && m.matches("FM.6..");
         Predicate<String> tatXXX = (m) -> m != null && m.matches("T.T...");
+        Predicate<String> ftXXX = (m) -> m != null && m.matches("(FT[A-Z]|AT[CM])\\d{3}");
 
         register(1, any, (p, b) -> p.set(Position.PREFIX_IN + 1, b.readUnsignedByte() > 0));
         register(2, any, (p, b) -> p.set(Position.PREFIX_IN + 2, b.readUnsignedByte() > 0));
@@ -218,7 +219,8 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
         register(57, fmbXXX, (p, b) -> p.set("hybridBatteryLevel", b.readByte()));
         register(66, any, (p, b) -> p.set(Position.KEY_POWER, b.readUnsignedShort() / 1000.0));
         register(67, any, (p, b) -> p.set(Position.KEY_BATTERY, b.readUnsignedShort() / 1000.0));
-        register(68, fmbXXX, (p, b) -> p.set("batteryCurrent", b.readUnsignedShort() / 1000.0));
+        register(68, fmbXXX.or(ftXXX), (p, b) -> p.set("batteryCurrent", b.readUnsignedShort() / 1000.0));
+        register(70, ftXXX, (p, b) -> p.set(Position.KEY_DEVICE_TEMP, b.readShort() / 10.0));
         register(72, fmbXXX, (p, b) -> p.set(Position.PREFIX_TEMP + 1, b.readInt() / 10.0));
         register(73, fmbXXX, (p, b) -> p.set(Position.PREFIX_TEMP + 2, b.readInt() / 10.0));
         register(74, fmbXXX, (p, b) -> p.set(Position.PREFIX_TEMP + 3, b.readInt() / 10.0));
@@ -229,7 +231,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
                 p.set(Position.KEY_DRIVER_UNIQUE_ID, String.format("%016X", driverUniqueId));
             }
         });
-        register(80, fmbXXX.and(fmb6XX.negate()), (p, b) -> p.set("dataMode", b.readUnsignedByte()));
+        register(80, fmbXXX.and(fmb6XX.negate()).or(ftXXX), (p, b) -> p.set("dataMode", b.readUnsignedByte()));
         register(81, fmbXXX.and(fmb6XX.negate()), (p, b) -> p.set(Position.KEY_OBD_SPEED, b.readUnsignedByte()));
         register(82, fmbXXX.and(fmb6XX.negate()), (p, b) -> p.set(Position.KEY_THROTTLE, b.readUnsignedByte()));
         register(83, fmbXXX.and(fmb6XX.negate()), (p, b) -> p.set(Position.KEY_FUEL_USED, b.readUnsignedInt() / 10.0));
@@ -239,9 +241,13 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
         register(89, fmbXXX.and(fmb6XX.negate()), (p, b) -> p.set(Position.KEY_FUEL_LEVEL, b.readUnsignedByte()));
         register(107, fmbXXX, (p, b) -> p.set(Position.KEY_FUEL_USED, b.readUnsignedInt() / 10.0));
         register(110, fmbXXX, (p, b) -> p.set(Position.KEY_FUEL_CONSUMPTION, b.readUnsignedShort() / 10.0));
-        register(113, fmbXXX, (p, b) -> p.set(Position.KEY_BATTERY_LEVEL, b.readUnsignedByte()));
+        register(113, fmbXXX.or(ftXXX), (p, b) -> p.set(Position.KEY_BATTERY_LEVEL, b.readUnsignedByte()));
         register(115, fmbXXX, (p, b) -> p.set(Position.KEY_ENGINE_TEMP, b.readShort() / 10.0));
+        register(152, fmbXXX.and(fmb6XX.negate()).or(ftXXX), (p, b) ->
+                p.set(Position.KEY_ENERGY_LEVEL, b.readUnsignedByte()));
         register(389, "FMB003"::equals, (p, b) -> p.set(Position.KEY_OBD_ODOMETER, b.readUnsignedInt() * 1000));
+        register(411, fmbXXX, (p, b) -> p.set(Position.KEY_ENERGY_LEVEL, b.readUnsignedByte()));
+        register(1383, fmbXXX, (p, b) -> p.set(Position.KEY_ENERGY, b.readUnsignedShort() / 100.0));
         register(701, fmb6XX, (p, b) -> p.set("bleTemp1", b.readShort() / 10.0));
         register(702, fmb6XX, (p, b) -> p.set("bleTemp2", b.readShort() / 10.0));
         register(703, fmb6XX, (p, b) -> p.set("bleTemp3", b.readShort() / 10.0));
@@ -251,18 +257,19 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
         register(181, any, (p, b) -> p.set(Position.KEY_PDOP, b.readUnsignedShort() / 10.0));
         register(182, any, (p, b) -> p.set(Position.KEY_HDOP, b.readUnsignedShort() / 10.0));
         register(199, any, (p, b) -> p.set(Position.KEY_ODOMETER_TRIP, b.readUnsignedInt()));
-        register(200, fmbXXX, (p, b) -> p.set("sleepMode", b.readUnsignedByte()));
+        register(200, fmbXXX.or(ftXXX), (p, b) -> p.set("sleepMode", b.readUnsignedByte()));
         register(205, fmbXXX.or(tatXXX), (p, b) -> p.set("cid2g", b.readUnsignedShort()));
         register(206, fmbXXX.or(tatXXX), (p, b) -> p.set("lac", b.readUnsignedShort()));
         register(236, any, (p, b) -> p.addAlarm(b.readUnsignedByte() > 0 ? Position.ALARM_GENERAL : null));
         register(239, any, (p, b) -> p.set(Position.KEY_IGNITION, b.readUnsignedByte() > 0));
         register(240, any, (p, b) -> p.set(Position.KEY_MOTION, b.readUnsignedByte() > 0));
         register(241, any, (p, b) -> p.set(Position.KEY_OPERATOR, b.readUnsignedInt()));
-        register(246, fmbXXX, (p, b) -> p.addAlarm(b.readUnsignedByte() > 0 ? Position.ALARM_TOW : null));
+        register(246, fmbXXX.or(ftXXX), (p, b) -> p.addAlarm(b.readUnsignedByte() > 0 ? Position.ALARM_TOW : null));
         register(247, fmbXXX, (p, b) -> p.addAlarm(b.readUnsignedByte() > 0 ? Position.ALARM_ACCIDENT : null));
-        register(249, fmbXXX, (p, b) -> p.addAlarm(b.readUnsignedByte() > 0 ? Position.ALARM_JAMMING : null));
-        register(251, fmbXXX, (p, b) -> p.addAlarm(b.readUnsignedByte() > 0 ? Position.ALARM_IDLE : null));
-        register(252, fmbXXX, (p, b) -> p.addAlarm(b.readUnsignedByte() > 0 ? Position.ALARM_POWER_CUT : null));
+        register(249, fmbXXX.or(ftXXX), (p, b) -> p.addAlarm(b.readUnsignedByte() > 0 ? Position.ALARM_JAMMING : null));
+        register(251, fmbXXX.or(ftXXX), (p, b) -> p.addAlarm(b.readUnsignedByte() > 0 ? Position.ALARM_IDLE : null));
+        register(252, fmbXXX.or(ftXXX), (p, b) ->
+                p.addAlarm(b.readUnsignedByte() > 0 ? Position.ALARM_POWER_CUT : null));
         register(253, any, (p, b) -> {
             switch (b.readUnsignedByte()) {
                 case 1 -> p.addAlarm(Position.ALARM_ACCELERATION);
@@ -270,11 +277,12 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
                 case 3 -> p.addAlarm(Position.ALARM_CORNERING);
             }
         });
-        register(175, fmbXXX, (p, b) -> {
+        register(175, fmbXXX.or(ftXXX), (p, b) -> {
             p.addAlarm(b.readUnsignedByte() > 0 ? Position.ALARM_GEOFENCE_ENTER : Position.ALARM_GEOFENCE_EXIT);
         });
         register(636, fmbXXX.or(tatXXX), (p, b) -> p.set("cid4g", b.readUnsignedInt()));
         register(662, fmbXXX, (p, b) -> p.set(Position.KEY_DOOR, b.readUnsignedByte() > 0));
+        register(800, ftXXX, (p, b) -> p.set(Position.KEY_POWER, b.readUnsignedInt() / 1000.0));
         register(10644, fmbXXX, (p, b) -> p.set("tempProbe1", b.readShort() / 100.0));
         register(10645, fmbXXX, (p, b) -> p.set("tempProbe2", b.readShort() / 100.0));
         register(10646, fmbXXX, (p, b) -> p.set("tempProbe3", b.readShort() / 100.0));
@@ -535,20 +543,24 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
                     int index = 1;
                     while (data.isReadable()) {
                         int flags = data.readUnsignedByte();
-                        if (BitUtil.from(flags, 4) > 0) {
-                            position.set("beacon" + index + "Uuid", ByteBufUtil.hexDump(data.readSlice(16)));
-                            position.set("beacon" + index + "Major", data.readUnsignedShort());
-                            position.set("beacon" + index + "Minor", data.readUnsignedShort());
-                        } else {
-                            position.set("beacon" + index + "Namespace", ByteBufUtil.hexDump(data.readSlice(10)));
-                            position.set("beacon" + index + "Instance", ByteBufUtil.hexDump(data.readSlice(6)));
-                        }
-                        position.set("beacon" + index + "Rssi", (int) data.readByte());
-                        if (BitUtil.check(flags, 1)) {
-                            position.set("beacon" + index + "Battery", data.readUnsignedShort() / 100.0);
-                        }
-                        if (BitUtil.check(flags, 2)) {
-                            position.set("beacon" + index + "Temp", data.readUnsignedShort());
+                        int beaconLength = (BitUtil.from(flags, 4) > 0 ? 20 : 16) + 1
+                                + (BitUtil.check(flags, 1) ? 2 : 0) + (BitUtil.check(flags, 2) ? 2 : 0);
+                        if (data.isReadable(beaconLength)) {
+                            if (BitUtil.from(flags, 4) > 0) {
+                                position.set("beacon" + index + "Uuid", ByteBufUtil.hexDump(data.readSlice(16)));
+                                position.set("beacon" + index + "Major", data.readUnsignedShort());
+                                position.set("beacon" + index + "Minor", data.readUnsignedShort());
+                            } else {
+                                position.set("beacon" + index + "Namespace", ByteBufUtil.hexDump(data.readSlice(10)));
+                                position.set("beacon" + index + "Instance", ByteBufUtil.hexDump(data.readSlice(6)));
+                            }
+                            position.set("beacon" + index + "Rssi", (int) data.readByte());
+                            if (BitUtil.check(flags, 1)) {
+                                position.set("beacon" + index + "Battery", data.readUnsignedShort() / 100.0);
+                            }
+                            if (BitUtil.check(flags, 2)) {
+                                position.set("beacon" + index + "Temp", data.readUnsignedShort());
+                            }
                         }
                         index += 1;
                     }
@@ -683,6 +695,10 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
 
         ByteBuf buf = (ByteBuf) msg;
 
+        if (buf.readableBytes() == 1 && buf.getUnsignedByte(buf.readerIndex()) == 0xff) {
+            return null;
+        }
+
         if (connectionless) {
             return decodeUdp(channel, remoteAddress, buf);
         } else {
@@ -692,9 +708,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
 
     private Object decodeTcp(Channel channel, SocketAddress remoteAddress, ByteBuf buf) {
 
-        if (buf.readableBytes() == 1 && buf.readUnsignedByte() == 0xff) {
-            return null;
-        } else if (buf.getUnsignedShort(0) > 0) {
+        if (buf.getUnsignedShort(0) > 0) {
             parseIdentification(channel, remoteAddress, buf);
         } else {
             buf.skipBytes(4);
@@ -705,6 +719,12 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
     }
 
     private Object decodeUdp(Channel channel, SocketAddress remoteAddress, ByteBuf buf) {
+
+        if (buf.getInt(buf.readerIndex()) == 0) {
+            buf.skipBytes(4); // preamble
+            buf.readUnsignedInt(); // data length
+            return parseData(channel, remoteAddress, buf, 0);
+        }
 
         buf.readUnsignedShort(); // length
         buf.readUnsignedShort(); // packet id

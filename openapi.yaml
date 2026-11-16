@@ -9,7 +9,7 @@ info:
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
-  version: '6.15.3'
+  version: '6.17.0'
 servers:
   - url: https://demo.traccar.org/api
     description: Demo Server 1
@@ -142,6 +142,7 @@ paths:
     get:
       operationId: getCommands
       summary: Fetch a list of Saved Commands
+      x-mcp: true
       tags:
         - Commands
       description: Without params, it returns a list of Saved Commands the user has access to
@@ -408,6 +409,7 @@ paths:
       operationId: getOrders
       summary: Fetch a list of Orders
       description: Without params, it returns a list of Orders the user has access to
+      x-mcp: true
       tags:
         - Orders
       parameters:
@@ -555,6 +557,7 @@ paths:
       operationId: getDevices
       summary: Fetch a list of Devices
       description: Without any params, returns a list of the user's devices
+      x-mcp: true
       tags:
         - Devices
       parameters:
@@ -772,7 +775,64 @@ paths:
         '404':
           description: Device not found
           content: {}
+  /devices/{id}/icon:
+    post:
+      operationId: postDevicesIdIcon
+      summary: Upload Device icon
+      tags:
+        - Devices
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          image/*:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: icon.png
+        '400':
+          description: Invalid image type or size
+          content: {}
+        '404':
+          description: Device not found
+          content: {}
   /share/device:
+    get:
+      operationId: getShareDevice
+      summary: Fetch a link for an existing device share
+      tags:
+        - Share
+      parameters:
+        - name: deviceId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Existing share with a newly generated token and its original expiration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareLink'
+        '403':
+          description: Sharing is disabled or temporary user
+          content: {}
+        '404':
+          description: Share not found
+          content: {}
     post:
       operationId: postShareDevice
       summary: Share device location
@@ -797,14 +857,37 @@ paths:
         '200':
           description: OK
           content:
-            text/plain:
+            application/json:
               schema:
-                type: string
-              example: eyJhbGciOi...
+                $ref: '#/components/schemas/ShareLink'
         '403':
           description: Sharing is disabled or temporary user
           content: {}
   /share/group:
+    get:
+      operationId: getShareGroup
+      summary: Fetch a link for an existing group share
+      tags:
+        - Share
+      parameters:
+        - name: groupId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Existing share with a newly generated token and its original expiration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareLink'
+        '403':
+          description: Sharing is disabled or temporary user
+          content: {}
+        '404':
+          description: Share not found
+          content: {}
     post:
       operationId: postShareGroup
       summary: Share group devices
@@ -829,18 +912,62 @@ paths:
         '200':
           description: OK
           content:
-            text/plain:
+            application/json:
               schema:
-                type: string
-              example: eyJhbGciOi...
+                $ref: '#/components/schemas/ShareLink'
         '403':
           description: Sharing is disabled or temporary user
+          content: {}
+  /share/device/{id}:
+    delete:
+      operationId: deleteShareDevice
+      summary: Delete an existing device share
+      tags:
+        - Share
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: No Content
+          content: {}
+        '403':
+          description: Sharing is disabled or temporary user
+          content: {}
+        '404':
+          description: Share not found
+          content: {}
+  /share/group/{id}:
+    delete:
+      operationId: deleteShareGroup
+      summary: Delete an existing group share
+      tags:
+        - Share
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: No Content
+          content: {}
+        '403':
+          description: Sharing is disabled or temporary user
+          content: {}
+        '404':
+          description: Share not found
           content: {}
   /groups:
     get:
       operationId: getGroups
       summary: Fetch a list of Groups
       description: Without any params, returns a list of the Groups the user belongs to
+      x-mcp: true
       tags:
         - Groups
       parameters:
@@ -1139,7 +1266,10 @@ paths:
         API](https://www.traccar.org/traccar-api/) instead of periodically
         polling positions endpoint. Without any params, it returns a list of
         last known positions for all the user's Devices. _from_ and _to_ fields
-        are not required with _id_.
+        are not required with _id_. Historical queries with _from_ and _to_ can
+        return a large number of results; use _limit_ to control the response
+        size.
+      x-mcp: true
       tags:
         - Positions
       parameters:
@@ -1167,6 +1297,19 @@ paths:
           description: >-
             To fetch one or more positions. Multiple params can be passed like
             `id=31&id=42`
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          description: >-
+            Maximum number of positions to return. If not specified, the server
+            configuration limit applies.
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          description: >-
+            Offset for pagination. Only applies to date-range queries. Default is 0.
           schema:
             type: integer
       responses:
@@ -1357,6 +1500,7 @@ paths:
     get:
       operationId: getServer
       summary: Fetch Server information
+      x-mcp: true
       tags:
         - Server
       security: []
@@ -1444,7 +1588,38 @@ paths:
         '401':
           description: Unauthorized
           content: {}
+  /server/file:
+    get:
+      operationId: getServerFiles
+      summary: List server files (administrator only)
+      tags:
+        - Server
+      responses:
+        '200':
+          description: Files sorted by name, excluding directories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
   /server/file/{path}:
+    delete:
+      operationId: deleteServerFilePath
+      summary: Delete a server file (administrator only)
+      tags:
+        - Server
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: File deleted
+        '400':
+          description: Invalid file path
     post:
       operationId: postServerFilePath
       summary: Upload a server file
@@ -1695,6 +1870,7 @@ paths:
     get:
       operationId: getUsers
       summary: Fetch a list of Users
+      x-mcp: true
       tags:
         - Users
       parameters:
@@ -1851,6 +2027,7 @@ paths:
       description: >-
         Without params, it returns a list of Notifications the user has access
         to
+      x-mcp: true
       tags:
         - Notifications
       parameters:
@@ -2118,6 +2295,7 @@ paths:
       operationId: getGeofences
       summary: Fetch a list of Geofences
       description: Without params, it returns a list of Geofences the user has access to
+      x-mcp: true
       tags:
         - Geofences
       parameters:
@@ -2304,6 +2482,7 @@ paths:
       operationId: getReportsCombined
       summary: Fetch a combined route, Events and Positions report for the Devices or Groups
       description: At least one _deviceId_ or one _groupId_ must be passed
+      x-mcp: true
       tags:
         - Reports
       parameters:
@@ -2353,7 +2532,10 @@ paths:
       summary: >-
         Fetch a list of Positions within the time period for the Devices or
         Groups
-      description: At least one _deviceId_ or one _groupId_ must be passed
+      deprecated: true
+      description: >-
+        Deprecated. Use _/positions_ with _deviceId_, _from_, _to_, and _limit_
+        instead. At least one _deviceId_ or one _groupId_ must be passed.
       tags:
         - Reports
       parameters:
@@ -2468,6 +2650,7 @@ paths:
       operationId: getReportsEvents
       summary: Fetch a list of Events within the time period for the Devices or Groups
       description: At least one _deviceId_ or one _groupId_ must be passed
+      x-mcp: true
       tags:
         - Reports
       parameters:
@@ -2611,6 +2794,7 @@ paths:
         Fetch geofence enter/exit intervals within the time period for Devices
         or Groups
       description: At least one _deviceId_ or one _groupId_ must be passed
+      x-mcp: true
       tags:
         - Reports
       parameters:
@@ -2668,6 +2852,7 @@ paths:
         Fetch a list of ReportSummary within the time period for the Devices or
         Groups
       description: At least one _deviceId_ or one _groupId_ must be passed
+      x-mcp: true
       tags:
         - Reports
       parameters:
@@ -2789,6 +2974,7 @@ paths:
         Fetch a list of ReportTrips within the time period for the Devices or
         Groups
       description: At least one _deviceId_ or one _groupId_ must be passed
+      x-mcp: true
       tags:
         - Reports
       parameters:
@@ -2905,6 +3091,7 @@ paths:
         Fetch a list of ReportStops within the time period for the Devices or
         Groups
       description: At least one _deviceId_ or one _groupId_ must be passed
+      x-mcp: true
       tags:
         - Reports
       parameters:
@@ -3145,6 +3332,7 @@ paths:
       operationId: getCalendars
       summary: Fetch a list of Calendars
       description: Without params, it returns a list of Calendars the user has access to
+      x-mcp: true
       tags:
         - Calendars
       parameters:
@@ -3287,6 +3475,7 @@ paths:
       operationId: getAttributesComputed
       summary: Fetch a list of Attributes
       description: Without params, it returns a list of Attributes the user has access to
+      x-mcp: true
       tags:
         - Attributes
       parameters:
@@ -3485,6 +3674,7 @@ paths:
       operationId: getDrivers
       summary: Fetch a list of Drivers
       description: Without params, it returns a list of Drivers the user has access to
+      x-mcp: true
       tags:
         - Drivers
       parameters:
@@ -3645,6 +3835,7 @@ paths:
       operationId: getMaintenance
       summary: Fetch a list of Maintenance tasks
       description: Without params, it returns a list of Maintenance tasks the user has access to
+      x-mcp: true
       tags:
         - Maintenance
       parameters:
@@ -3802,6 +3993,14 @@ paths:
           content: {}
 components:
   schemas:
+    ShareLink:
+      type: object
+      properties:
+        token:
+          type: string
+        expiration:
+          type: string
+          format: date-time
     Position:
       type: object
       properties:
@@ -4357,6 +4556,9 @@ components:
         deviceName:
           type: string
           description: Human readable device name
+        business:
+          type: boolean
+          description: Business attribute from the trip's starting position. False if absent.
         maxSpeed:
           type: number
           description: in knots

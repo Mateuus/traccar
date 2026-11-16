@@ -42,9 +42,9 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.stream.Stream;
 
 public class RouteReportProvider {
@@ -69,13 +69,12 @@ public class RouteReportProvider {
         return DeviceUtil.getAccessibleDevices(storage, userId, deviceIds, groupIds).stream()
                 .flatMap(device -> {
                     try {
-                        return PositionUtil.getPositionsStream(storage, device.getId(), from, to, limit);
+                        return PositionUtil.getPositionsStream(storage, device.getId(), from, to, limit, 0);
                     } catch (StorageException e) {
                         throw new RuntimeException(e);
                     }
                 });
     }
-
 
     private String getUniqueSheetName(String key) {
         namesCount.compute(key, (k, value) -> value == null ? 1 : (value + 1));
@@ -91,7 +90,7 @@ public class RouteReportProvider {
         ArrayList<String> sheetNames = new ArrayList<>();
         for (Device device: DeviceUtil.getAccessibleDevices(storage, userId, deviceIds, groupIds)) {
             List<Position> positions;
-            try (var stream = PositionUtil.getPositionsStream(storage, device.getId(), from, to, limit)) {
+            try (var stream = PositionUtil.getPositionsStream(storage, device.getId(), from, to, limit, 0)) {
                 positions = stream.toList();
             }
             DeviceReportSection deviceRoutes = new DeviceReportSection();

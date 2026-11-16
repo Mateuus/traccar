@@ -15,17 +15,17 @@
  */
 package org.traccar.api.resource;
 
+import org.traccar.api.BaseResource;
+import org.traccar.database.StatisticsManager;
+import org.traccar.helper.Log;
+import org.traccar.storage.StorageException;
+
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
-import org.traccar.api.BaseResource;
-import org.traccar.database.StatisticsManager;
-import org.traccar.helper.Log;
-import org.traccar.storage.StorageException;
-
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;

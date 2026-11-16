@@ -19,7 +19,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import org.traccar.BaseProtocolDecoder;
-import org.traccar.session.DeviceSession;
 import org.traccar.NetworkMessage;
 import org.traccar.Protocol;
 import org.traccar.helper.DataConverter;
@@ -30,6 +29,7 @@ import org.traccar.helper.UnitsConverter;
 import org.traccar.model.CellTower;
 import org.traccar.model.Network;
 import org.traccar.model.Position;
+import org.traccar.session.DeviceSession;
 
 import java.net.SocketAddress;
 import java.util.regex.Matcher;
@@ -293,7 +293,6 @@ public class Gps103ProtocolDecoder extends BaseProtocolDecoder {
         return position;
     }
 
-
     private Position decodeAlternative(Channel channel, SocketAddress remoteAddress, String sentence) {
 
         Parser parser = new Parser(PATTERN_ALT, sentence);
@@ -396,7 +395,7 @@ public class Gps103ProtocolDecoder extends BaseProtocolDecoder {
 
         if (sentence.startsWith("vr", 21)) {
             return decodePhoto(channel, remoteAddress, sentence);
-        } else if (sentence.substring(21, 21 + 3).contains("OBD")) {
+        } else if (sentence.startsWith("OBD", 21)) {
             return decodeObd(channel, remoteAddress, sentence);
         } else if (sentence.endsWith("*")) {
             return decodeAlternative(channel, remoteAddress, sentence);

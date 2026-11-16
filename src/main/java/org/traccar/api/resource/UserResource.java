@@ -18,10 +18,6 @@ package org.traccar.api.resource;
 import com.warrenstrange.googleauth.GoogleAuthenticator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.ws.rs.DELETE;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.core.Context;
 import org.traccar.api.BaseObjectResource;
 import org.traccar.api.security.ServiceAccountUser;
 import org.traccar.config.Config;
@@ -47,17 +43,20 @@ import org.traccar.storage.query.Request;
 
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -237,7 +236,6 @@ public class UserResource extends BaseObjectResource<User> {
         }
         return new GoogleAuthenticator().createCredentials().getKey();
     }
-
 
     /**
      * Foto de perfil — envio.

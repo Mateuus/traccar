@@ -23,7 +23,6 @@ import org.traccar.config.Keys;
 import org.traccar.helper.ReflectionCache;
 import org.traccar.model.Permission;
 
-import javax.sql.DataSource;
 import java.lang.invoke.MethodHandle;
 import java.lang.reflect.Constructor;
 import java.sql.Connection;
@@ -46,6 +45,7 @@ import java.util.Spliterators;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
+import javax.sql.DataSource;
 
 public final class QueryBuilder implements AutoCloseable {
 
@@ -169,6 +169,8 @@ public final class QueryBuilder implements AutoCloseable {
                     setDouble(index, (Double) value);
                 } else if (returnType.equals(String.class)) {
                     setString(index, (String) value);
+                } else if (returnType.isEnum()) {
+                    setString(index, value != null ? ((Enum<?>) value).name() : null);
                 } else if (returnType.equals(Date.class)) {
                     setDate(index, (Date) value);
                 } else if (returnType.equals(byte[].class)) {
@@ -209,6 +211,10 @@ public final class QueryBuilder implements AutoCloseable {
             processors.add((object, resultSet) -> {
                 handle.invokeExact(object, (Object) resultSet.getString(columnIndex));
             });
+        } else if (parameterType.isEnum()) {
+            processors.add((object, resultSet) -> {
+                handle.invokeExact(object, objectMapper.convertValue(resultSet.getString(columnIndex), parameterType));
+            });
         } else if (parameterType.equals(Date.class)) {
             processors.add((object, resultSet) -> {
                 Timestamp timestamp = resultSet.getTimestamp(columnIndex);
@@ -241,12 +247,13 @@ public final class QueryBuilder implements AutoCloseable {
         try {
             logQuery();
 
-            connection.setAutoCommit(false);
-            streamingTransaction = true;
-            statement.setFetchSize(switch (databaseType) {
-                case "MySQL" -> Integer.MIN_VALUE;
-                default -> config.getInteger(Keys.DATABASE_STREAM_FETCH_SIZE);
-            });
+            if (databaseType.equals("MySQL")) {
+                statement.setFetchSize(Integer.MIN_VALUE);
+            } else {
+                connection.setAutoCommit(false);
+                streamingTransaction = true;
+                statement.setFetchSize(config.getInteger(Keys.DATABASE_STREAM_FETCH_SIZE));
+            }
 
             resultSet = statement.executeQuery();
             ResultSetMetaData resultMetaData = resultSet.getMetaData();

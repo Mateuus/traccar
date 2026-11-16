@@ -22,6 +22,7 @@ import org.traccar.helper.model.PositionUtil;
 import org.traccar.model.Device;
 import org.traccar.model.Geofence;
 import org.traccar.model.Position;
+import org.traccar.model.User;
 import org.traccar.storage.Storage;
 import org.traccar.storage.StorageException;
 import org.traccar.storage.query.Columns;
@@ -49,14 +50,16 @@ public class GpxExportProvider {
     }
 
     public void generate(
-            OutputStream outputStream, long deviceId, long geofenceId, Date from, Date to)
+            OutputStream outputStream, long userId, long deviceId, long geofenceId, Date from, Date to)
             throws StorageException, XMLStreamException {
 
         var device = storage.getObject(Device.class, new Request(
                 new Columns.All(), new Condition.Equals("id", deviceId)));
 
         Geofence geofence = geofenceId == 0 ? null : storage.getObject(Geofence.class, new Request(
-                new Columns.All(), new Condition.Equals("id", geofenceId)));
+                new Columns.All(), new Condition.And(
+                        new Condition.Equals("id", geofenceId),
+                        new Condition.Permission(User.class, userId, Geofence.class))));
 
         XMLStreamWriter writer = XMLOutputFactory.newFactory()
                 .createXMLStreamWriter(outputStream, StandardCharsets.UTF_8.name());
@@ -70,7 +73,7 @@ public class GpxExportProvider {
         writer.writeEndElement();
         writer.writeStartElement("trkseg");
         try (Stream<Position> positions = PositionUtil.getPositionsStream(
-                storage, deviceId, from, to, config.getInteger(Keys.REPORT_MAX_POSITIONS))
+                storage, deviceId, from, to, config.getInteger(Keys.REPORT_MAX_POSITIONS), 0)
                 .filter(position -> geofence == null || geofence.containsPosition(position))) {
             for (var iterator = positions.iterator(); iterator.hasNext();) {
                 Position position = iterator.next();

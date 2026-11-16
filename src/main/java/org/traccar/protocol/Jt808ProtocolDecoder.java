@@ -21,14 +21,13 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import org.traccar.BaseProtocol;
 import org.traccar.BaseProtocolDecoder;
-import org.traccar.config.Keys;
-import org.traccar.helper.BufferUtil;
-import org.traccar.model.WifiAccessPoint;
-import org.traccar.session.DeviceSession;
 import org.traccar.NetworkMessage;
 import org.traccar.Protocol;
+import org.traccar.config.Keys;
 import org.traccar.helper.BcdUtil;
 import org.traccar.helper.BitUtil;
+import org.traccar.helper.BufferUtil;
+import org.traccar.helper.CharsetUtil;
 import org.traccar.helper.Checksum;
 import org.traccar.helper.DataConverter;
 import org.traccar.helper.DateBuilder;
@@ -37,10 +36,11 @@ import org.traccar.helper.UnitsConverter;
 import org.traccar.model.CellTower;
 import org.traccar.model.Network;
 import org.traccar.model.Position;
+import org.traccar.model.WifiAccessPoint;
+import org.traccar.session.DeviceSession;
 
 import java.net.SocketAddress;
 import java.net.URI;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -73,6 +73,7 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
     public static final int MSG_TERMINAL_AUTH = 0x0102;
     public static final int MSG_TERMINAL_ATTRIBUTES = 0x0107;
     public static final int MSG_LOCATION_REPORT = 0x0200;
+    public static final int MSG_LOCATION_QUERY_RESPONSE = 0x0201;
     public static final int MSG_LOCATION_BATCH_2 = 0x0210;
     public static final int MSG_ACCELERATION = 0x2070;
     public static final int MSG_LOCATION_REPORT_2 = 0x5501;
@@ -94,6 +95,13 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
     public static final int MSG_DRIVER_IDENTITY = 0x0702;
     public static final int MSG_VIDEO_REQUEST = 0x9101;
     public static final int MSG_VIDEO_CONTROL = 0x9102;
+    public static final int MSG_PARAMETER_QUERY_RESPONSE = 0x0104;
+    public static final int MSG_PARAMETER_QUERY_ALL = 0x8104;
+    public static final int MSG_LOCATION_QUERY = 0x8201;
+    public static final int MSG_TEMPORARY_TRACKING = 0x8202;
+    public static final int MSG_ALARM_ACK = 0x8203;
+    public static final int MSG_VEHICLE_CONTROL = 0x8500;
+    public static final int MSG_TAKE_PHOTO = 0x8801;
 
     public static final int RESULT_SUCCESS = 0;
 
@@ -106,6 +114,10 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
 
     public Integer getProtocolVersion() {
         return protocolVersion;
+    }
+
+    public void setProtocolVersion(int protocolVersion) {
+        this.protocolVersion = protocolVersion;
     }
 
     public ByteBuf formatMessage(int type, ByteBuf id, boolean shortIndex, ByteBuf data) {
@@ -391,9 +403,9 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
             getLastLocation(position, null);
 
             buf.readUnsignedByte(); // encoding
-            Charset charset = Charset.isSupported("GBK") ? Charset.forName("GBK") : StandardCharsets.US_ASCII;
 
-            position.set(Position.KEY_RESULT, buf.readCharSequence(buf.readableBytes() - 2, charset).toString());
+            position.set(Position.KEY_RESULT,
+                    buf.readCharSequence(buf.readableBytes() - 2, CharsetUtil.GBK).toString());
 
             return position;
 
@@ -458,6 +470,12 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
             Position position = decodeLocation(deviceSession, buf);
             requestAttachments(channel, remoteAddress, id, position);
             return position;
+
+        } else if (type == MSG_LOCATION_QUERY_RESPONSE) {
+
+            buf.readUnsignedShort(); // response serial number
+
+            return decodeLocation(deviceSession, buf);
 
         } else if (type == MSG_LOCATION_REPORT_2 || type == MSG_LOCATION_REPORT_BLIND) {
 
@@ -565,6 +583,66 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
 
             return position;
 
+        } else if (type == MSG_PARAMETER_QUERY_RESPONSE) {
+
+            Position position = new Position(getProtocolName());
+            position.setDeviceId(deviceSession.getDeviceId());
+
+            getLastLocation(position, null);
+
+            buf.readUnsignedShort(); // response serial number
+            buf.readUnsignedByte(); // parameter count
+
+            while (buf.readableBytes() - 2 >= 5) {
+
+                int subtype = buf.readInt();
+                int length = buf.readUnsignedByte();
+                int endIndex = buf.readerIndex() + length;
+                if (endIndex > buf.writerIndex() - 2) {
+                    break;
+                }
+                switch (subtype) {
+                    case 0x0001:
+                        position.set("heartbeatInterval", buf.readUnsignedInt());
+                        break;
+                    case 0x0010:
+                        position.set("apn", buf.readCharSequence(length, CharsetUtil.GBK).toString());
+                        break;
+                    case 0x0013:
+                        position.set("server", buf.readCharSequence(length, CharsetUtil.GBK).toString());
+                        break;
+                    case 0x0018:
+                        position.set("port", buf.readUnsignedInt());
+                        break;
+                    case 0x0027:
+                        position.set("sleepReportInterval", buf.readUnsignedInt());
+                        break;
+                    case 0x0028:
+                        position.set("emergencyReportInterval", buf.readUnsignedInt());
+                        break;
+                    case 0x0029:
+                        position.set("defaultReportInterval", buf.readUnsignedInt());
+                        break;
+                    case 0x0055:
+                        position.set("overspeedThreshold", buf.readUnsignedInt());
+                        break;
+                    case 0x0056:
+                        position.set("speedLimitDuration", buf.readUnsignedInt());
+                        break;
+                    case 0x0080:
+                        position.set(Position.KEY_ODOMETER, buf.readUnsignedInt() * 100);
+                        break;
+                    case 0x0083:
+                        position.set("plateNumber", buf.readCharSequence(length, CharsetUtil.GBK).toString().trim());
+                        break;
+                    default:
+                        break;
+                }
+                buf.readerIndex(endIndex);
+            }
+
+            return position;
+
         }
 
         return null;
@@ -633,6 +711,9 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
         position.set(Position.KEY_IGNITION, BitUtil.check(status, 0));
         if ("G1C Pro".equals(model)) {
             position.set(Position.KEY_MOTION, BitUtil.check(status, 4));
+        }
+        if ("MV710G".equals(model)) {
+            position.set(Position.KEY_ARMED, BitUtil.check(status, 6));
         }
         position.set(Position.KEY_BLOCKED, BitUtil.check(status, 10));
         if ("MV810G".equals(model) || "MV710G".equals(model)) {
@@ -937,11 +1018,13 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
                     }
                     break;
                 case 0xDA:
-                    buf.readUnsignedShort(); // string cut count
-                    int deviceStatus = buf.readUnsignedByte();
-                    position.set("string", BitUtil.check(deviceStatus, 0));
-                    position.set(Position.KEY_MOTION, BitUtil.check(deviceStatus, 2));
-                    position.set("cover", BitUtil.check(deviceStatus, 3));
+                    if (length >= 3) {
+                        buf.readUnsignedShort(); // string cut count
+                        int deviceStatus = buf.readUnsignedByte();
+                        position.set("string", BitUtil.check(deviceStatus, 0));
+                        position.set(Position.KEY_MOTION, BitUtil.check(deviceStatus, 2));
+                        position.set("cover", BitUtil.check(deviceStatus, 3));
+                    }
                     break;
                 case 0xE2:
                     if (!"DT800".equals(model)) {
@@ -1198,7 +1281,7 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
                     }
                     break;
                 case 0xF0:
-                    while (buf.readerIndex() < endIndex) {
+                    while (endIndex - buf.readerIndex() >= 13) {
                         int mcc = buf.readUnsignedShort();
                         int mnc = buf.readUnsignedShort();
                         long cid = buf.readUnsignedInt();
@@ -1336,6 +1419,8 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
                 case 0xF7:
                     if (length == 2) {
                         position.set(Position.KEY_HUMIDITY, buf.readUnsignedShort() / 10.0);
+                    } else if (length >= 9) {
+                        buf.skipBytes(length); // apn information
                     } else {
                         position.set(Position.KEY_BATTERY, buf.readUnsignedInt() / 1000.0);
                         if (length >= 5) {
@@ -1613,6 +1698,14 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
             Position position = new Position(getProtocolName());
             position.setDeviceId(deviceSession.getDeviceId());
 
+            String model = getDeviceModel(deviceSession);
+            if (model != null && model.startsWith("JC")) {
+                getLastLocation(position, null);
+                position.set(Position.KEY_RESULT,
+                        buf.readCharSequence(buf.readableBytes() - 2, StandardCharsets.US_ASCII).toString());
+                return position;
+            }
+
             Date time = readDate(buf, deviceSession.get(DeviceSession.KEY_TIMEZONE));
 
             if (buf.readUnsignedByte() > 0) {
@@ -1639,7 +1732,7 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
                             case 0x052A -> position.set(Position.KEY_FUEL, buf.readUnsignedShort() / 100.0);
                             case 0x0105, 0x052C -> position.set(Position.KEY_FUEL_USED, buf.readUnsignedInt() / 100.0);
                             case 0x014A, 0x0537, 0x0538, 0x0539 ->
-                                position.set(Position.KEY_FUEL_CONSUMPTION, buf.readUnsignedShort() / 100.0);
+                                    position.set(Position.KEY_FUEL_CONSUMPTION, buf.readUnsignedShort() / 100.0);
                             case 0x052B -> position.set(Position.KEY_FUEL, buf.readUnsignedByte());
                             case 0x052D -> position.set(Position.KEY_COOLANT_TEMP, buf.readUnsignedByte() - 40);
                             case 0x052E -> position.set("airTemp", buf.readUnsignedByte() - 40);

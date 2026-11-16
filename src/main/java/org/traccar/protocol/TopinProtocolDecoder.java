@@ -20,7 +20,6 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import org.traccar.BaseProtocolDecoder;
-import org.traccar.session.DeviceSession;
 import org.traccar.NetworkMessage;
 import org.traccar.Protocol;
 import org.traccar.helper.BcdUtil;
@@ -31,6 +30,7 @@ import org.traccar.model.CellTower;
 import org.traccar.model.Network;
 import org.traccar.model.Position;
 import org.traccar.model.WifiAccessPoint;
+import org.traccar.session.DeviceSession;
 
 import java.net.SocketAddress;
 import java.util.Calendar;
@@ -252,8 +252,9 @@ public class TopinProtocolDecoder extends BaseProtocolDecoder {
             int mcc = buf.readUnsignedShort();
             int mnc = buf.readUnsignedByte();
             for (int i = 0; i < cellCount; i++) {
-                network.addCellTower(CellTower.from(
-                        mcc, mnc, buf.readUnsignedShort(), buf.readUnsignedShort(), buf.readUnsignedByte()));
+                int lac = type == MSG_LBS_WIFI_2 ? buf.readInt() : buf.readUnsignedShort();
+                long cid = type == MSG_LBS_WIFI_2 ? buf.readUnsignedInt() : buf.readUnsignedShort();
+                network.addCellTower(CellTower.from(mcc, mnc, lac, cid, buf.readUnsignedByte()));
             }
 
             if (buf.readableBytes() > 2) {

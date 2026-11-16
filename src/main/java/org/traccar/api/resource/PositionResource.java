@@ -22,6 +22,7 @@ import org.traccar.helper.model.PositionUtil;
 import org.traccar.model.Device;
 import org.traccar.model.Geofence;
 import org.traccar.model.Position;
+import org.traccar.model.User;
 import org.traccar.model.UserRestrictions;
 import org.traccar.reports.CsvExportProvider;
 import org.traccar.reports.GpxExportProvider;
@@ -33,8 +34,8 @@ import org.traccar.storage.query.Request;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
 import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -44,14 +45,14 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.StreamingOutput;
-import javax.xml.stream.XMLStreamException;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import javax.xml.stream.XMLStreamException;
 
 @Path("positions")
 @Produces(MediaType.APPLICATION_JSON)
@@ -73,7 +74,8 @@ public class PositionResource extends BaseResource {
     @GET
     public Stream<Position> getJson(
             @QueryParam("deviceId") long deviceId, @QueryParam("id") List<Long> positionIds,
-            @QueryParam("geofenceId") long geofenceId, @QueryParam("from") Date from, @QueryParam("to") Date to)
+            @QueryParam("geofenceId") long geofenceId, @QueryParam("from") Date from, @QueryParam("to") Date to,
+            @QueryParam("limit") int limit, @QueryParam("offset") int offset)
             throws StorageException {
         if (!positionIds.isEmpty()) {
             permissionsService.checkRestriction(getUserId(), UserRestrictions::getDisableReports);
@@ -91,10 +93,13 @@ public class PositionResource extends BaseResource {
                 permissionsService.checkRestriction(getUserId(), UserRestrictions::getDisableReports);
 
                 Geofence geofence = geofenceId == 0 ? null : storage.getObject(Geofence.class, new Request(
-                        new Columns.All(), new Condition.Equals("id", geofenceId)));
+                        new Columns.All(), new Condition.And(
+                                new Condition.Equals("id", geofenceId),
+                                new Condition.Permission(User.class, getUserId(), Geofence.class))));
 
                 return PositionUtil.getPositionsStream(
-                        storage, deviceId, from, to, config.getInteger(Keys.REPORT_MAX_POSITIONS))
+                        storage, deviceId, from, to,
+                        limit > 0 ? limit : config.getInteger(Keys.REPORT_MAX_POSITIONS), offset)
                         .filter(position -> geofence == null || geofence.containsPosition(position));
             } else {
                 return storage.getObjectsStream(Position.class, new Request(
@@ -150,11 +155,11 @@ public class PositionResource extends BaseResource {
                 if (extension.equals("kmz")) {
                     try (ZipOutputStream zipStream = new ZipOutputStream(output)) {
                         zipStream.putNextEntry(new ZipEntry("doc.kml"));
-                        kmlExportProvider.generate(zipStream, deviceId, geofenceId, from, to);
+                        kmlExportProvider.generate(zipStream, getUserId(), deviceId, geofenceId, from, to);
                         zipStream.closeEntry();
                     }
                 } else {
-                    kmlExportProvider.generate(output, deviceId, geofenceId, from, to);
+                    kmlExportProvider.generate(output, getUserId(), deviceId, geofenceId, from, to);
                 }
             } catch (XMLStreamException | StorageException e) {
                 throw new WebApplicationException(e);
@@ -196,7 +201,7 @@ public class PositionResource extends BaseResource {
         permissionsService.checkRestriction(getUserId(), UserRestrictions::getDisableReports);
         StreamingOutput stream = output -> {
             try {
-                gpxExportProvider.generate(output, deviceId, geofenceId, from, to);
+                gpxExportProvider.generate(output, getUserId(), deviceId, geofenceId, from, to);
             } catch (XMLStreamException | StorageException e) {
                 throw new WebApplicationException(e);
             }
