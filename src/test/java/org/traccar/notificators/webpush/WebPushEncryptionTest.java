@@ -3,6 +3,7 @@ package org.traccar.notificators.webpush;
 import org.junit.jupiter.api.Test;
 
 import java.security.KeyPair;
+import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -54,7 +55,7 @@ public class WebPushEncryptionTest {
     @Test
     public void testSharedSecret() throws Exception {
         byte[] secret = WebPushEncryption.sharedSecret(
-                (java.security.interfaces.ECPrivateKey) applicationServerKeyPair().getPrivate(), decode(UA_PUBLIC));
+                (ECPrivateKey) applicationServerKeyPair().getPrivate(), decode(UA_PUBLIC));
         assertEquals(ECDH_SECRET, WebPushKeys.encodeBase64(secret));
     }
 
