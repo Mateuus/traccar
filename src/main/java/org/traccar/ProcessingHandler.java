@@ -148,7 +148,7 @@ public class ProcessingHandler extends ChannelInboundHandlerAdapter implements B
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (msg instanceof Position position) {
-            cacheManager.addDevice(position.getDeviceId(), position);
+            cacheManager.addDevice(position.getDeviceId(), null, position);
             bufferingManager.accept(ctx, position);
         } else {
             super.channelRead(ctx, msg);

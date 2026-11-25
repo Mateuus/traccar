@@ -614,13 +614,6 @@ public final class Keys {
             List.of(KeyType.CONFIG));
 
     /**
-     * Throttle unknown device database queries when it sends repeated requests.
-     */
-    public static final ConfigKey<Boolean> DATABASE_THROTTLE_UNKNOWN = new BooleanConfigKey(
-            "database.throttleUnknown",
-            List.of(KeyType.CONFIG));
-
-    /**
      * Automatically register unknown devices in the database.
      */
     public static final ConfigKey<Boolean> DATABASE_REGISTER_UNKNOWN = new BooleanConfigKey(
@@ -649,8 +642,9 @@ public final class Keys {
             List.of(KeyType.CONFIG), "\\w{3,15}");
 
     /**
-     * Limit latest position queries to a certain time period in seconds. This is useful for TimescaleDB
-     * to avoid scanning all time chunks. Default value is 7776000 seconds (90 days). Zero value disables the limit.
+     * Limit latest position and device position cache queries to a certain time period in seconds.
+     * Useful for TimescaleDB to avoid scanning all time chunks. Default value is 7776000 seconds (90 days).
+     * Zero value disables the limit.
      */
     public static final ConfigKey<Long> DATABASE_POSITION_PERIOD = new LongConfigKey(
             "database.positionPeriod",
@@ -671,14 +665,12 @@ public final class Keys {
             List.of(KeyType.CONFIG));
 
     /**
-     * If not zero, enable batching of position inserts. The value is the flush interval in milliseconds; positions
-     * accumulated during this window are written as a single JDBC batch. Trades up to this much latency for
-     * higher throughput on busy servers.
+     * Flush interval for position inserts in milliseconds. Set to 0 to write each position immediately.
      */
     public static final ConfigKey<Long> DATABASE_POSITION_BATCH_INTERVAL = new LongConfigKey(
             "database.positionBatchInterval",
             List.of(KeyType.CONFIG),
-            0L);
+            100L);
 
     /**
      * Maximum number of positions written in a single batch. Default value is 100, which is safe across all supported
@@ -689,6 +681,14 @@ public final class Keys {
             "database.positionBatchSize",
             List.of(KeyType.CONFIG),
             100);
+
+    /**
+     * Maximum number of concurrent position batch writers.
+     */
+    public static final ConfigKey<Integer> DATABASE_POSITION_BATCH_THREADS = new IntegerConfigKey(
+            "database.positionBatchThreads",
+            List.of(KeyType.CONFIG),
+            4);
 
     /**
      * Delay processing updates to device status and latest position by this many milliseconds, merging updates

@@ -16,6 +16,7 @@
 package org.traccar.storage;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.cache.Cache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.traccar.config.Config;
@@ -36,7 +37,6 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -58,11 +58,12 @@ public final class QueryBuilder implements AutoCloseable {
     private final PreparedStatement statement;
     private final String query;
     private final boolean returnGeneratedKeys;
+    private final int[] parameterTypes;
 
     private boolean streamingTransaction;
 
     private QueryBuilder(
-            Config config, DataSource dataSource, ObjectMapper objectMapper,
+            Config config, DataSource dataSource, ObjectMapper objectMapper, Cache<String, int[]> typeCache,
             String query, boolean returnGeneratedKeys) throws SQLException {
         this.config = config;
         this.objectMapper = objectMapper;
@@ -75,6 +76,24 @@ public final class QueryBuilder implements AutoCloseable {
             } else {
                 statement = connection.prepareStatement(query);
             }
+            if (typeCache == null) {
+                parameterTypes = null;
+            } else {
+                int[] types = typeCache.getIfPresent(query);
+                if (types == null) {
+                    try {
+                        var metadata = statement.getParameterMetaData();
+                        types = new int[metadata != null ? metadata.getParameterCount() : 0];
+                        for (int index = 0; index < types.length; index++) {
+                            types[index] = metadata.getParameterType(index + 1);
+                        }
+                    } catch (SQLException error) {
+                        types = new int[0];
+                    }
+                    typeCache.put(query, types);
+                }
+                parameterTypes = types.length > 0 ? types : null;
+            }
         } catch (SQLException error) {
             connection.close();
             throw error;
@@ -82,14 +101,9 @@ public final class QueryBuilder implements AutoCloseable {
     }
 
     public static QueryBuilder create(
-            Config config, DataSource dataSource, ObjectMapper objectMapper, String query) throws SQLException {
-        return new QueryBuilder(config, dataSource, objectMapper, query, false);
-    }
-
-    public static QueryBuilder create(
-            Config config, DataSource dataSource, ObjectMapper objectMapper, String query,
-            boolean returnGeneratedKeys) throws SQLException {
-        return new QueryBuilder(config, dataSource, objectMapper, query, returnGeneratedKeys);
+            Config config, DataSource dataSource, ObjectMapper objectMapper, Cache<String, int[]> typeCache,
+            String query, boolean returnGeneratedKeys) throws SQLException {
+        return new QueryBuilder(config, dataSource, objectMapper, typeCache, query, returnGeneratedKeys);
     }
 
     public void setBoolean(int index, boolean value) throws SQLException {
@@ -105,8 +119,11 @@ public final class QueryBuilder implements AutoCloseable {
     }
 
     public void setLong(int index, long value, boolean nullIfZero) throws SQLException {
+        int type = parameterTypes != null && parameterTypes[index] == Types.INTEGER ? Types.INTEGER : Types.BIGINT;
         if (value == 0 && nullIfZero) {
-            statement.setNull(index + 1, Types.BIGINT);
+            statement.setNull(index + 1, type);
+        } else if (type == Types.INTEGER) {
+            statement.setInt(index + 1, Math.toIntExact(value));
         } else {
             statement.setLong(index + 1, value);
         }
@@ -180,7 +197,7 @@ public final class QueryBuilder implements AutoCloseable {
                 }
             }
         } catch (Throwable e) {
-            LOGGER.warn("Set object error", e);
+            throw new SQLException("Failed to bind " + object.getClass().getSimpleName(), e);
         }
     }
 
@@ -356,6 +373,18 @@ public final class QueryBuilder implements AutoCloseable {
         statement.addBatch();
     }
 
+    void executeUpdateBatch() throws SQLException {
+        connection.setAutoCommit(false);
+        try {
+            logQuery();
+            statement.executeBatch();
+            connection.commit();
+        } catch (SQLException error) {
+            connection.rollback();
+            throw error;
+        }
+    }
+
     public List<Long> executeBatch() throws SQLException {
         logQuery();
         statement.executeBatch();
@@ -370,18 +399,14 @@ public final class QueryBuilder implements AutoCloseable {
         return ids;
     }
 
-    public List<Permission> executePermissionsQuery() throws SQLException {
+    public List<Permission> executePermissionsQuery(List<Permission> filters) throws SQLException {
         List<Permission> result = new ArrayList<>();
         logQuery();
         try (ResultSet resultSet = statement.executeQuery()) {
-            ResultSetMetaData resultMetaData = resultSet.getMetaData();
             while (resultSet.next()) {
-                LinkedHashMap<String, Long> map = new LinkedHashMap<>();
-                for (int i = 1; i <= resultMetaData.getColumnCount(); i++) {
-                    String label = resultMetaData.getColumnLabel(i);
-                    map.put(label, resultSet.getLong(label));
-                }
-                result.add(new Permission(map));
+                var filter = filters.get(resultSet.getInt(1));
+                result.add(new Permission(
+                        filter.getOwnerClass(), resultSet.getLong(2), filter.getPropertyClass(), resultSet.getLong(3)));
             }
         }
         return result;
